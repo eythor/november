@@ -17,9 +17,22 @@ import (
 	"github.com/google/uuid"
 )
 
+type PatientMedicalSummary struct {
+	Demographics    string   `json:"demographics,omitempty"`
+	ActiveConditions []string `json:"active_conditions,omitempty"`
+	CurrentMedications []string `json:"current_medications,omitempty"`
+	RecentObservations []string `json:"recent_observations,omitempty"`
+	Allergies       []string `json:"allergies,omitempty"`
+	RecentEncounters []string `json:"recent_encounters,omitempty"`
+	LastEncounter   string   `json:"last_encounter,omitempty"`
+	TotalEncounters int      `json:"total_encounters,omitempty"`
+	LastUpdated     string   `json:"last_updated,omitempty"`
+}
+
 type Context struct {
-	PatientID      string `json:"patient_id,omitempty"`
-	PractitionerID string `json:"practitioner_id,omitempty"`
+	PatientID      string                `json:"patient_id,omitempty"`
+	PractitionerID string                `json:"practitioner_id,omitempty"`
+	PatientSummary *PatientMedicalSummary `json:"patient_summary,omitempty"`
 }
 
 type Handler struct {
@@ -43,8 +56,15 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 	patient, err := database.GetPatientByID(h.db, query)
 	if err == nil {
 		// Auto-set context for single patient found
+		medicalSummary, summaryErr := h.fetchPatientMedicalSummary(patient.ID)
+		if summaryErr != nil {
+			debug.Error("Failed to fetch medical summary: %v", summaryErr)
+			medicalSummary = nil
+		}
+		
 		h.mu.Lock()
 		h.context.PatientID = patient.ID
+		h.context.PatientSummary = medicalSummary
 		h.mu.Unlock()
 
 		resultText := formatPatientInfo(*patient)
@@ -91,8 +111,16 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 	// If exactly one patient found, auto-set context
 	if len(patients) == 1 {
 		p := patients[0]
+		
+		medicalSummary, summaryErr := h.fetchPatientMedicalSummary(p.ID)
+		if summaryErr != nil {
+			debug.Error("Failed to fetch medical summary: %v", summaryErr)
+			medicalSummary = nil
+		}
+		
 		h.mu.Lock()
 		h.context.PatientID = p.ID
+		h.context.PatientSummary = medicalSummary
 		h.mu.Unlock()
 
 		resultText := formatPatientInfo(p)
@@ -1389,8 +1417,14 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 	}
 
 	// Build system prompt with context information
-	systemPrompt := "You are a helpful healthcare assistant. You have access to patient data and can help with medical queries. Use the available tools to answer user questions accurately. Always reply in english. CRITICAL: Keep responses extremely brief and concise - aim for 2-4 sentences maximum. Your responses will be converted to audio, so brevity is essential. For medical history queries, provide a high-level summary of key conditions, recent procedures, and current medications - do NOT list every detail. Focus on the most important and recent information only."
-	systemPrompt += h.GetContextInfo()
+	systemPrompt := "You are a helpful healthcare assistant. You have access to patient data and can help with medical queries. Use the available tools to answer user questions accurately. Always reply in english. CRITICAL: Keep responses extremely brief and concise - aim for 2-4 sentences maximum. Your responses will be converted to audio, so brevity is essential."
+	
+	// Add specific guidance when we have patient context
+	contextInfo := h.GetContextInfo()
+	if strings.Contains(contextInfo, "Patient Medical Summary") {
+		systemPrompt += "\n\nYou have the current patient's medical summary available. Use this information to provide more personalized and relevant responses. Consider the patient's conditions, medications, and allergies when answering questions or making recommendations."
+	}
+	systemPrompt += contextInfo
 
 	reqBody := map[string]interface{}{
 		"model": "google/gemini-2.5-flash",

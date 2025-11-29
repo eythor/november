@@ -372,6 +372,33 @@ func SearchMedicationByName(db *sql.DB, medicationName string) (*Medication, err
 	return &medication, nil
 }
 
+func GetEncountersByPatientID(db *sql.DB, patientID string) ([]Encounter, error) {
+	debug.Verbose("GetEncountersByPatientID called for patient: %s", patientID)
+	rows, err := db.Query(`
+		SELECT id, status, class, type_display, patient_id, practitioner_id, 
+		       start_datetime, end_datetime
+		FROM encounters
+		WHERE patient_id = ?
+		ORDER BY start_datetime DESC
+	`, patientID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var encounters []Encounter
+	for rows.Next() {
+		var e Encounter
+		err := rows.Scan(&e.ID, &e.Status, &e.Class, &e.TypeDisplay, 
+			&e.PatientID, &e.PractitionerID, &e.StartDateTime, &e.EndDateTime)
+		if err != nil {
+			continue
+		}
+		encounters = append(encounters, e)
+	}
+	return encounters, nil
+}
+
 func GetObservationsByPatientID(db *sql.DB, patientID string) ([]Observation, error) {
 	debug.Verbose("GetObservationsByPatientID called for patient: %s", patientID)
 	rows, err := db.Query(`
