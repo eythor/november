@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+
+# MCP HTTP Query Utility
+# Usage: mcp-query-http "your natural language query"
+# Or just run mcp-query-http for interactive mode
+
+set -e
+
+# Colors for output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+NC='\033[0m' # No Color
+
+# Configuration
+MCP_SERVER_URL="${MCP_SERVER_URL:-http://localhost:8080}"
+QUERY_ENDPOINT="${MCP_SERVER_URL}/query"
+HEALTH_ENDPOINT="${MCP_SERVER_URL}/health"
+
+# Check if server is running
+check_server() {
+    if curl -s -f "$HEALTH_ENDPOINT" > /dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Send query to HTTP server
+send_query() {
+    local query="$1"
+    
+    # Create JSON request
+    local json_request=$(jq -n --arg query "$query" '{query: $query}')
+    
+    # Send HTTP POST request
+    local response=$(curl -s -X POST \
+        -H "Content-Type: application/json" \
+        -d "$json_request" \
+        "$QUERY_ENDPOINT" 2>/dev/null)
+    
+    # Check if we got a response
+    if [ -n "$response" ]; then
+        # Extract response text
+        echo "$response" | jq -r '.response // .error // "No response received"'
+    else
+        echo "Failed to connect to MCP server at $MCP_SERVER_URL"
+        echo "Make sure the server is running: go run cmd/http/main.go"
+    fi
+}
+
+# Main logic
+main() {
+    # Check if server is running
+    if ! check_server; then
+        echo -e "${YELLOW}Warning: MCP server not responding at $MCP_SERVER_URL${NC}"
+        echo "To start the server, run:"
+        echo "  export OPENROUTER_API_KEY=your-key-here"
+        echo "  go run cmd/http/main.go"
+        echo ""
+        echo "Or to start in background:"
+        echo "  nohup go run cmd/http/main.go > mcp-server.log 2>&1 &"
+        exit 1
+    fi
+    
+    if [ $# -eq 0 ]; then
+        # Interactive mode
+        echo -e "${BLUE}MCP HTTP Query Interface${NC}"
+        echo -e "${BLUE}=========================${NC}"
+        echo -e "${GREEN}Server: $MCP_SERVER_URL${NC}"
+        echo "Type your queries below (type 'exit' or 'quit' to stop):"
+        echo ""
+        
+        while true; do
+            echo -ne "${GREEN}Query> ${NC}"
+            read -r query
+            
+            # Check for exit commands
+            if [[ "$query" == "exit" ]] || [[ "$query" == "quit" ]] || [[ "$query" == "q" ]]; then
+                echo "Goodbye!"
+                break
+            fi
+            
+            # Skip empty queries
+            if [[ -z "$query" ]]; then
+                continue
+            fi
+            
+            echo -e "${BLUE}Response:${NC}"
+            send_query "$query"
+            echo ""
+        done
+    else
+        # Single query mode - combine all arguments as the query
+        query="$*"
+        echo -e "${BLUE}Query:${NC} $query"
+        echo -e "${BLUE}Response:${NC}"
+        send_query "$query"
+    fi
+}
+
+# Check for required tools
+for cmd in curl jq; do
+    if ! command -v $cmd &> /dev/null; then
+        echo "Error: $cmd is required but not installed."
+        exit 1
+    fi
+done
+
+# Run main function
+main "$@"

@@ -39,7 +39,6 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 		&patient.Gender, &patient.BirthDate, &patient.Phone,
 		&patient.City, &patient.State,
 	)
-	fmt.Println("LookupPatientByID query:", query, "error:", err)
 	
 	if err == nil {
 		return map[string]interface{}{
@@ -60,7 +59,6 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 		WHERE given_name LIKE ? OR family_name LIKE ? OR (given_name || ' ' || family_name) LIKE ?
 	`, searchQuery, searchQuery, searchQuery)
 	
-	fmt.Println("LookupPatientByName query:", searchQuery, "error:", err)
 	if err != nil {
 		return nil, fmt.Errorf("database query failed: %w", err)
 	}
@@ -391,6 +389,23 @@ func (h *Handler) AnswerHealthQuestion(question string) (interface{}, error) {
 	}, nil
 }
 
+func (h *Handler) ProcessNaturalLanguageQuery(query string) (interface{}, error) {
+	// Use function calling with OpenRouter to process natural language queries
+	response, err := h.callOpenRouterWithTools(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process query: %w", err)
+	}
+	
+	return map[string]interface{}{
+		"content": []map[string]interface{}{
+			{
+				"type": "text",
+				"text": response,
+			},
+		},
+	}, nil
+}
+
 func (h *Handler) callOpenRouter(prompt string) (string, error) {
 	reqBody := map[string]interface{}{
 		"model": "meta-llama/llama-3.2-3b-instruct:free",
@@ -456,6 +471,300 @@ func (h *Handler) callOpenRouter(prompt string) (string, error) {
 	}
 	
 	return result.Choices[0].Message.Content, nil
+}
+
+func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
+	// Define available tools for the LLM
+	tools := []map[string]interface{}{
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "lookup_patient",
+				"description": "Look up a patient by name or ID",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"query": map[string]interface{}{
+							"type": "string",
+							"description": "Patient name or ID to search for",
+						},
+					},
+					"required": []string{"query"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "get_medical_history",
+				"description": "Retrieve patient medical history",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"patient_id": map[string]interface{}{
+							"type": "string",
+							"description": "Patient ID",
+						},
+						"category": map[string]interface{}{
+							"type": "string",
+							"description": "Category of history (conditions, medications, procedures, immunizations, allergies, all)",
+							"enum": []string{"conditions", "medications", "procedures", "immunizations", "allergies", "all"},
+						},
+					},
+					"required": []string{"patient_id"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "schedule_appointment",
+				"description": "Schedule an appointment for a patient",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"patient_id": map[string]interface{}{
+							"type": "string",
+							"description": "Patient ID",
+						},
+						"practitioner_id": map[string]interface{}{
+							"type": "string",
+							"description": "Practitioner ID",
+						},
+						"datetime": map[string]interface{}{
+							"type": "string",
+							"description": "Appointment date and time (ISO 8601 format)",
+						},
+						"type": map[string]interface{}{
+							"type": "string",
+							"description": "Type of appointment",
+						},
+					},
+					"required": []string{"patient_id", "practitioner_id", "datetime"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "get_medication_info",
+				"description": "Get information about medications",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"medication_name": map[string]interface{}{
+							"type": "string",
+							"description": "Name of the medication",
+						},
+					},
+					"required": []string{"medication_name"},
+				},
+			},
+		},
+	}
+
+	reqBody := map[string]interface{}{
+		"model": "openai/gpt-4o-mini", // TODO: Decide on another model. 
+		"messages": []map[string]interface{}{
+			{
+				"role":    "system",
+				// TODO:L We need to fine tune this later
+				"content": "You are a helpful healthcare assistant. You have access to patient data and can help with medical queries. Use the available tools to answer user questions accurately. Always remind users to consult healthcare professionals for medical advice.",
+			},
+			{
+				"role":    "user",
+				"content": query,
+			},
+		},
+		"tools": tools,
+		"tool_choice": "auto",
+		"temperature": 0.3,
+		"max_tokens": 1000,
+	}
+
+	return h.executeToolLoop(reqBody, query)
+}
+
+func (h *Handler) executeToolLoop(reqBody map[string]interface{}, originalQuery string) (string, error) {
+	maxIterations := 5
+	messages := reqBody["messages"].([]map[string]interface{})
+
+	for i := 0; i < maxIterations; i++ {
+		// Update messages in request
+		reqBody["messages"] = messages
+
+		jsonBody, err := json.Marshal(reqBody)
+		if err != nil {
+			return "", fmt.Errorf("failed to marshal request: %w", err)
+		}
+
+		req, err := http.NewRequest("POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(jsonBody))
+		if err != nil {
+			return "", fmt.Errorf("failed to create request: %w", err)
+		}
+
+		req.Header.Set("Authorization", "Bearer "+h.apiKey)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("HTTP-Referer", "https://github.com/eythor/mcp-server")
+		req.Header.Set("X-Title", "Healthcare MCP Server")
+
+		client := &http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("request failed: %w", err)
+		}
+		defer resp.Body.Close()
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return "", fmt.Errorf("failed to read response: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("OpenRouter API error (%d): %s", resp.StatusCode, string(body))
+		}
+
+		var result struct {
+			Choices []struct {
+				Message struct {
+					Role      string `json:"role"`
+					Content   string `json:"content,omitempty"`
+					ToolCalls []struct {
+						ID   string `json:"id"`
+						Type string `json:"type"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls,omitempty"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+
+		if err := json.Unmarshal(body, &result); err != nil {
+			return "", fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+
+		if len(result.Choices) == 0 {
+			return "", fmt.Errorf("no response from OpenRouter")
+		}
+
+		message := result.Choices[0].Message
+		
+		// Add assistant message to conversation
+		messages = append(messages, map[string]interface{}{
+			"role":       message.Role,
+			"content":    message.Content,
+			"tool_calls": message.ToolCalls,
+		})
+
+		// If no tool calls, return the content
+		if len(message.ToolCalls) == 0 {
+			return message.Content, nil
+		}
+
+		// Execute tool calls
+		for _, toolCall := range message.ToolCalls {
+			result, err := h.executeTool(toolCall.Function.Name, toolCall.Function.Arguments)
+			if err != nil {
+				result = fmt.Sprintf("Error executing %s: %v", toolCall.Function.Name, err)
+			}
+
+			// Add tool result to conversation
+			messages = append(messages, map[string]interface{}{
+				"role":         "tool",
+				"tool_call_id": toolCall.ID,
+				"content":      result,
+			})
+		}
+	}
+
+	return "I apologize, but I wasn't able to complete your request after multiple attempts.", nil
+}
+
+func (h *Handler) executeTool(toolName, argumentsJSON string) (string, error) {
+	var args map[string]interface{}
+	if err := json.Unmarshal([]byte(argumentsJSON), &args); err != nil {
+		return "", fmt.Errorf("failed to parse arguments: %w", err)
+	}
+
+	switch toolName {
+	case "lookup_patient":
+		query, ok := args["query"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid query parameter")
+		}
+		result, err := h.LookupPatient(query)
+		if err != nil {
+			return "", err
+		}
+		return h.extractTextFromMCPResult(result), nil
+
+	case "get_medical_history":
+		patientID, ok := args["patient_id"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid patient_id parameter")
+		}
+		category := "all"
+		if cat, exists := args["category"].(string); exists {
+			category = cat
+		}
+		result, err := h.GetMedicalHistory(patientID, category)
+		if err != nil {
+			return "", err
+		}
+		return h.extractTextFromMCPResult(result), nil
+
+	case "schedule_appointment":
+		patientID, ok := args["patient_id"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid patient_id parameter")
+		}
+		practitionerID, ok := args["practitioner_id"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid practitioner_id parameter")
+		}
+		datetime, ok := args["datetime"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid datetime parameter")
+		}
+		appointmentType := ""
+		if t, exists := args["type"].(string); exists {
+			appointmentType = t
+		}
+		result, err := h.ScheduleAppointment(patientID, practitionerID, datetime, appointmentType)
+		if err != nil {
+			return "", err
+		}
+		return h.extractTextFromMCPResult(result), nil
+
+	case "get_medication_info":
+		medicationName, ok := args["medication_name"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid medication_name parameter")
+		}
+		result, err := h.GetMedicationInfo(medicationName)
+		if err != nil {
+			return "", err
+		}
+		return h.extractTextFromMCPResult(result), nil
+
+	default:
+		return "", fmt.Errorf("unknown tool: %s", toolName)
+	}
+}
+
+func (h *Handler) extractTextFromMCPResult(result interface{}) string {
+	if resultMap, ok := result.(map[string]interface{}); ok {
+		if content, ok := resultMap["content"].([]map[string]interface{}); ok {
+			if len(content) > 0 {
+				if text, ok := content[0]["text"].(string); ok {
+					return text
+				}
+			}
+		}
+	}
+	return fmt.Sprintf("%v", result)
 }
 
 // Helper functions

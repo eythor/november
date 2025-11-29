@@ -1,13 +1,22 @@
-.PHONY: build run dev test clean db-init
+.PHONY: build run dev test clean db-init http-server
 
 build:
 	go build -o mcp-server .
 
+build-http:
+	go build -o mcp-http-server cmd/http/main.go
+
 run: build
 	./mcp-server
 
+run-http: build-http
+	./mcp-http-server
+
 dev:
 	air
+
+http-server:
+	go run cmd/http/main.go
 
 test:
 	go test -v ./...

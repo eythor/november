@@ -37,6 +37,19 @@ make db-init
 
 ## Usage
 
+### Quick Natural Language Queries
+```bash
+# Enter nix development environment
+nix develop
+
+# Interactive mode - keep asking questions
+./mcp-query
+
+# Single query mode
+./mcp-query "Find patient Cole117 and tell me about them"
+./mcp-query "What medications is patient 123 taking?"
+```
+
 ### Build and Run
 ```bash
 # Build the binary
@@ -55,6 +68,12 @@ The server communicates via JSON-RPC over stdin/stdout. Each message should be a
 Example initialization:
 ```json
 {"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}
+```
+
+### Natural Language Query Examples
+```json
+{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "natural_language_query", "arguments": {"query": "Find all patients named John"}}, "id": 1}
+{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "natural_language_query", "arguments": {"query": "Get medical history for patient ID abc123"}}, "id": 2}
 ```
 
 ### Environment Variables

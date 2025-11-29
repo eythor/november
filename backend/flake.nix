@@ -46,6 +46,8 @@
             sqlite-interactive
             pkg-config
             air # for hot reloading during development
+            jq # for JSON processing in utilities
+            curl # for HTTP requests
           ];
 
           shellHook = ''
@@ -54,8 +56,11 @@
             echo "Go version: $(go version)"
             echo ""
             echo "Available commands:"
-            echo "  go run .                  - Run the MCP server"
-            echo "  go build                  - Build the MCP server"
+            echo "  make http-server          - Start HTTP server (recommended)"
+            echo "  ./mcp-query-http          - Query the HTTP server"
+            echo "  ./mcp-query               - Interactive query (stdin/stdout mode)"
+            echo "  go run cmd/http/main.go   - Run HTTP server directly"
+            echo "  go run .                  - Run the MCP server (stdin/stdout)"
             echo "  go test ./...             - Run tests"
             echo "  air                       - Run with hot reload"
             echo "  sqlite3 database.db       - Open SQLite database"

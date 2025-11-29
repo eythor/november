@@ -92,6 +92,20 @@ func (s *Server) handleInitialize() map[string]interface{} {
 func (s *Server) handleToolsList() map[string]interface{} {
 	tools := []map[string]interface{}{
 		{
+			"name":        "natural_language_query",
+			"description": "Process natural language queries using AI with access to all healthcare tools",
+			"inputSchema": map[string]interface{}{
+				"type":     "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Natural language query about patients, medical history, appointments, etc.",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
 			"name":        "lookup_patient",
 			"description": "Look up a patient by name or ID",
 			"inputSchema": map[string]interface{}{
@@ -210,6 +224,15 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 	}
 
 	switch toolCall.Name {
+	case "natural_language_query":
+		var args struct {
+			Query string `json:"query"`
+		}
+		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+			return nil, err
+		}
+		return s.handler.ProcessNaturalLanguageQuery(args.Query)
+
 	case "lookup_patient":
 		var args struct {
 			Query string `json:"query"`
