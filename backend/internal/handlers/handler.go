@@ -677,6 +677,147 @@ func (h *Handler) GetClaims(patientID string) (interface{}, error) {
 	}, nil
 }
 
+func (h *Handler) DetermineApixabanDose(patientID string) (interface{}, error) {
+	// Use context if patient ID not provided
+	patientID = h.GetContextPatientID(patientID)
+
+	if patientID == "" {
+		return nil, fmt.Errorf("patient ID is required (no patient ID provided and none set in context)")
+	}
+
+	// Get patient to retrieve birth date and calculate age
+	patient, err := database.GetPatientByID(h.db, patientID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("patient not found: %s", patientID)
+		}
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+
+	// Calculate age
+	var age int
+	ageMet := false
+	if patient.BirthDate != "" {
+		age, err = calculateAge(patient.BirthDate)
+		if err == nil {
+			ageMet = age >= 80
+		}
+	}
+
+	// Get all observations for the patient
+	observations, err := database.GetObservationsByPatientID(h.db, patientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get observations: %w", err)
+	}
+
+	// Find most recent body weight observation
+	var bodyWeight *float64
+	bodyWeightMet := false
+	for _, obs := range observations {
+		displayLower := strings.ToLower(obs.Display)
+		if (strings.Contains(displayLower, "weight") || strings.Contains(displayLower, "body weight")) &&
+			obs.ValueQuantity != nil && obs.ValueUnit != nil {
+			// Check if unit is kg or convert if needed
+			unitLower := strings.ToLower(*obs.ValueUnit)
+			weight := *obs.ValueQuantity
+			if strings.Contains(unitLower, "kg") {
+				bodyWeight = &weight
+				bodyWeightMet = weight <= 60.0
+				break
+			} else if strings.Contains(unitLower, "lb") || strings.Contains(unitLower, "pound") {
+				// Convert pounds to kg (1 lb = 0.453592 kg)
+				weightKg := weight * 0.453592
+				bodyWeight = &weightKg
+				bodyWeightMet = weightKg <= 60.0
+				break
+			}
+		}
+	}
+
+	// Find most recent serum creatinine observation
+	var serumCreatinine *float64
+	creatinineMet := false
+	for _, obs := range observations {
+		displayLower := strings.ToLower(obs.Display)
+		if (strings.Contains(displayLower, "creatinine") || strings.Contains(displayLower, "serum creatinine")) &&
+			obs.ValueQuantity != nil && obs.ValueUnit != nil {
+			unitLower := strings.ToLower(*obs.ValueUnit)
+			creatinine := *obs.ValueQuantity
+			// Check if unit is mg/dL or convert if needed
+			if strings.Contains(unitLower, "mg/dl") || strings.Contains(unitLower, "mg/dL") {
+				serumCreatinine = &creatinine
+				creatinineMet = creatinine >= 1.5
+				break
+			} else if strings.Contains(unitLower, "umol/l") || strings.Contains(unitLower, "μmol/l") {
+				// Convert μmol/L to mg/dL (1 mg/dL = 88.4 μmol/L)
+				creatinineMgDl := creatinine / 88.4
+				serumCreatinine = &creatinineMgDl
+				creatinineMet = creatinineMgDl >= 1.5
+				break
+			}
+		}
+	}
+
+	// Count how many conditions are met
+	conditionsMet := 0
+	var conditions []string
+	if ageMet {
+		conditionsMet++
+		conditions = append(conditions, fmt.Sprintf("Age ≥80 years: ✓ (%d years)", age))
+	} else if patient.BirthDate != "" {
+		conditions = append(conditions, fmt.Sprintf("Age ≥80 years: ✗ (%d years)", age))
+	} else {
+		conditions = append(conditions, "Age ≥80 years: ✗ (birth date not available)")
+	}
+
+	if bodyWeightMet {
+		conditionsMet++
+		conditions = append(conditions, fmt.Sprintf("Body weight ≤60 kg: ✓ (%.2f kg)", *bodyWeight))
+	} else if bodyWeight != nil {
+		conditions = append(conditions, fmt.Sprintf("Body weight ≤60 kg: ✗ (%.2f kg)", *bodyWeight))
+	} else {
+		conditions = append(conditions, "Body weight ≤60 kg: ✗ (not found in observations)")
+	}
+
+	if creatinineMet {
+		conditionsMet++
+		conditions = append(conditions, fmt.Sprintf("Serum creatinine ≥1.5 mg/dL: ✓ (%.2f mg/dL)", *serumCreatinine))
+	} else if serumCreatinine != nil {
+		conditions = append(conditions, fmt.Sprintf("Serum creatinine ≥1.5 mg/dL: ✗ (%.2f mg/dL)", *serumCreatinine))
+	} else {
+		conditions = append(conditions, "Serum creatinine ≥1.5 mg/dL: ✗ (not found in observations)")
+	}
+
+	// Determine dose: half dose if 2 out of 3 conditions are met
+	dose := "Full dose"
+	if conditionsMet >= 2 {
+		dose = "Half dose"
+	}
+
+	patientName, _ := database.GetPatientName(h.db, patientID)
+	resultText := fmt.Sprintf("Apixaban Dose Determination for %s (ID: %s)\n\n", patientName, patientID)
+	resultText += fmt.Sprintf("Conditions evaluated:\n")
+	for _, cond := range conditions {
+		resultText += fmt.Sprintf("• %s\n", cond)
+	}
+	resultText += fmt.Sprintf("\nConditions met: %d out of 3\n", conditionsMet)
+	resultText += fmt.Sprintf("\nRecommendation: %s of Apixaban", dose)
+	if conditionsMet >= 2 {
+		resultText += "\n\nReason: 2 or more dose reduction criteria are met (age ≥80 years, body weight ≤60 kg, or serum creatinine ≥1.5 mg/dL)."
+	} else {
+		resultText += "\n\nReason: Less than 2 dose reduction criteria are met."
+	}
+
+	return map[string]interface{}{
+		"content": []map[string]interface{}{
+			{
+				"type": "text",
+				"text": resultText,
+			},
+		},
+	}, nil
+}
+
 func (h *Handler) GetMedicalGuidelines(query string) (interface{}, error) {
 	// Build a comprehensive prompt for medical guidelines and information
 	systemContext := `You are a medical information assistant providing evidence-based information about:
@@ -1208,6 +1349,33 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 				},
 			},
 		},
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "determine_apixaban_dose",
+				"description": "Determine whether to give half or full dose of Apixaban based on patient criteria. Half dose is recommended if 2 out of 3 conditions are met: age ≥80 years, body weight ≤60 kg, or serum creatinine ≥1.5 mg/dL." + func() string {
+					if hasPatientContext {
+						return " (uses default patient if not specified)"
+					}
+					return ""
+				}(),
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"patient_id": map[string]interface{}{
+							"type": "string",
+							"description": "Patient ID" + func() string {
+								if hasPatientContext {
+									return " (optional, uses context if not provided)"
+								}
+								return ""
+							}(),
+						},
+					},
+					"required": historyRequired,
+				},
+			},
+		},
 	}
 
 	// Build system prompt with context information
@@ -1524,6 +1692,17 @@ func (h *Handler) executeTool(toolName, argumentsJSON string, defaultPractitione
 			return "", fmt.Errorf("invalid query parameter")
 		}
 		result, err := h.GetMedicalGuidelines(query)
+		if err != nil {
+			return "", err
+		}
+		return h.ExtractTextFromMCPResult(result), nil
+
+	case "determine_apixaban_dose":
+		patientID := ""
+		if pid, exists := args["patient_id"].(string); exists {
+			patientID = pid
+		}
+		result, err := h.DetermineApixabanDose(patientID)
 		if err != nil {
 			return "", err
 		}
