@@ -42,7 +42,7 @@
             gopls
             go-tools
             golangci-lint
-            sqlite
+            # sqlite
             sqlite-interactive
             pkg-config
             air # for hot reloading during development
@@ -64,6 +64,7 @@
             echo "  OPENROUTER_API_KEY        - Set your OpenRouter API key"
             echo "  DATABASE_PATH             - Path to SQLite database (default: ./database.db)"
             echo ""
+
             
             # Create database if it doesn't exist
             if [ ! -f database.db ]; then
@@ -73,7 +74,7 @@
             fi
           '';
 
-          OPENROUTER_API_KEY = builtins.getEnv "OPENROUTER_API_KEY";
+          OPENROUTER_API_KEY = pkgs.builtins.getEnv "OPENROUTER_API_KEY";
         };
       });
 }

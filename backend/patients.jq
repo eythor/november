@@ -1,0 +1,26 @@
+# Extract patient data from FHIR Patient resource and format for SQLite insertion
+{
+  id: .id,
+  resource_type: "Patient",
+  given_name: (.name[0].given[0] // null),
+  family_name: (.name[0].family // null),
+  prefix: (.name[0].prefix[0] // null),
+  gender: .gender,
+  birth_date: .birthDate,
+  marital_status: (.maritalStatus.coding[0].display // null),
+  phone: (.telecom[] | select(.system == "phone" and .use == "home") | .value),
+  address_line: (.address[0].line[0] // null),
+  city: (.address[0].city // null),
+  state: (.address[0].state // null),
+  postal_code: (.address[0].postalCode // null),
+  country: (.address[0].country // null),
+  ssn: (.identifier[] | select(.type.coding[0].code == "SS") | .value),
+  drivers_license: (.identifier[] | select(.type.coding[0].code == "DL") | .value),
+  passport: (.identifier[] | select(.type.coding[0].code == "PPN") | .value),
+  race: (.extension[] | select(.url == "http://hl7.org/fhir/us/core/StructureDefinition/us-core-race") | .extension[] | select(.url == "ombCategory") | .valueCoding.display),
+  ethnicity: (.extension[] | select(.url == "http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity") | .extension[] | select(.url == "ombCategory") | .valueCoding.display),
+  birth_place: (.extension[] | select(.url == "http://hl7.org/fhir/StructureDefinition/patient-birthPlace") | "\(.valueAddress.city), \(.valueAddress.state)"),
+  mothers_maiden_name: (.extension[] | select(.url == "http://hl7.org/fhir/StructureDefinition/patient-mothersMaidenName") | .valueString),
+  language: (.communication[0].language.coding[0].code // null),
+  raw_json: . | tostring
+}

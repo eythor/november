@@ -1,7 +1,6 @@
 -- SQLite Schema for FHIR Healthcare Data
 -- This schema represents FHIR resources with their relationships
 
--- Core entity tables
 CREATE TABLE IF NOT EXISTS patients (
     id TEXT PRIMARY KEY,
     resource_type TEXT DEFAULT 'Patient',
@@ -72,7 +71,6 @@ CREATE TABLE IF NOT EXISTS locations (
     raw_json TEXT
 );
 
--- Clinical tables
 CREATE TABLE IF NOT EXISTS encounters (
     id TEXT PRIMARY KEY,
     resource_type TEXT DEFAULT 'Encounter',
@@ -189,7 +187,6 @@ CREATE TABLE IF NOT EXISTS allergy_intolerances (
     FOREIGN KEY (recorder_id) REFERENCES practitioners(id)
 );
 
--- Medication tables
 CREATE TABLE IF NOT EXISTS medications (
     id TEXT PRIMARY KEY,
     resource_type TEXT DEFAULT 'Medication',
@@ -242,7 +239,6 @@ CREATE TABLE IF NOT EXISTS medication_administrations (
     FOREIGN KEY (performer_id) REFERENCES practitioners(id)
 );
 
--- Diagnostic tables
 CREATE TABLE IF NOT EXISTS diagnostic_reports (
     id TEXT PRIMARY KEY,
     resource_type TEXT DEFAULT 'DiagnosticReport',
@@ -279,7 +275,6 @@ CREATE TABLE IF NOT EXISTS imaging_studies (
     FOREIGN KEY (encounter_id) REFERENCES encounters(id)
 );
 
--- Administrative tables
 CREATE TABLE IF NOT EXISTS care_plans (
     id TEXT PRIMARY KEY,
     resource_type TEXT DEFAULT 'CarePlan',
@@ -312,7 +307,6 @@ CREATE TABLE IF NOT EXISTS care_teams (
     FOREIGN KEY (encounter_id) REFERENCES encounters(id)
 );
 
--- Financial tables
 CREATE TABLE IF NOT EXISTS claims (
     id TEXT PRIMARY KEY,
     resource_type TEXT DEFAULT 'Claim',
@@ -353,7 +347,6 @@ CREATE TABLE IF NOT EXISTS explanation_of_benefits (
     FOREIGN KEY (claim_id) REFERENCES claims(id)
 );
 
--- Other resources
 CREATE TABLE IF NOT EXISTS devices (
     id TEXT PRIMARY KEY,
     resource_type TEXT DEFAULT 'Device',
@@ -427,7 +420,6 @@ CREATE TABLE IF NOT EXISTS provenance (
     raw_json TEXT
 );
 
--- Indexes for common queries
 CREATE INDEX idx_encounters_patient ON encounters(patient_id);
 CREATE INDEX idx_encounters_date ON encounters(start_datetime);
 CREATE INDEX idx_conditions_patient ON conditions(patient_id);
@@ -439,7 +431,6 @@ CREATE INDEX idx_medication_requests_patient ON medication_requests(patient_id);
 CREATE INDEX idx_diagnostic_reports_patient ON diagnostic_reports(patient_id);
 CREATE INDEX idx_claims_patient ON claims(patient_id);
 
--- View for patient summary
 CREATE VIEW patient_summary AS
 SELECT 
     p.id,
