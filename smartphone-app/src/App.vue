@@ -9,30 +9,23 @@
       :toggle-play="togglePlay"
     />
     <Footer
-      v-model:draft="draft"
-      :can-send="canSend"
-      @sendText="sendText"
       @onVoiceRecorded="onVoiceRecorded"
-      @onEnter="handleEnter"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted } from "vue";
+import { ref, nextTick, onMounted } from "vue";
 import { useChatStore } from "./stores/chat";
 import { storeToRefs } from "pinia";
 import MessageList from "./components/MessageList.vue";
 import Footer from "./components/Footer.vue";
-import { sendChatMessage, sendAudioMessage } from "./services/api";
+import { sendAudioMessage } from "./services/api";
 import type { Message } from "./stores/chat";
 
 const store = useChatStore();
 const { messages } = storeToRefs(store);
 const scrollEl = ref<HTMLElement | null>(null);
-const draft = ref("");
-
-const canSend = computed(() => draft.value.trim().length > 0);
 
 function scrollToBottom() {
   if (!scrollEl.value) return;
@@ -49,49 +42,6 @@ function pushLocalMessage(payload: Partial<Message>) {
   return id;
 }
 
-// --- send message to backend ---
-async function sendMessage(message: Message) {
-  try {
-    const response = await sendChatMessage(message);
-    store.patchMessage(message.id, { delivered: true, sentAt: Date.now() });
-
-    // Handle backend reply if present
-    if (response && response.reply) {
-      pushLocalMessage({
-        role: "assistant",
-        type: (response.reply.type || "text") as "text" | "audio",
-        text: response.reply.text,
-        duration: response.reply.duration,
-        createdAt: Date.now(),
-      });
-    } else {
-      console.warn('No reply in backend response:', response);
-    }
-
-    nextTick(scrollToBottom);
-  } catch (error) {
-    console.error('Failed to send message:', error);
-    // Optionally mark as failed or retry
-  }
-}
-
-// --- handle enter key ---
-function handleEnter() {
-  sendText();
-}
-
-// --- user sends text ---
-async function sendText() {
-  if (!canSend.value) return;
-  const text = draft.value.trim();
-  draft.value = "";
-
-  const id = pushLocalMessage({ role: "user", type: "text", text });
-  const message = store.messages.find(m => m.id === id);
-  if (message) {
-    await sendMessage(message);
-  }
-}
 
 const currentAudio = ref<HTMLAudioElement | null>(null);
 const playingMsgId = ref<string | null>(null);

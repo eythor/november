@@ -172,37 +172,6 @@ const upload = multer({
   }
 });
 
-// Endpoint to receive chat messages (text)
-app.post('/chat', (req: Request, res: Response) => {
-  try {
-    const { id, role, type, text, createdAt } = req.body;
-
-    // Acknowledge message received
-    console.log('📨 Message received');
-
-    // Return a simple reply for testing
-    // TODO: Replace with actual AI/chat service integration
-    res.json({
-      message: 'Chat message received successfully',
-      received: {
-        id,
-        role,
-        type,
-        text,
-        createdAt
-      },
-      reply: {
-        type: 'text',
-        text: `I received your message: "${text}". This is a placeholder reply - integrate your chat service here.`
-      }
-    });
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-    console.error('❌ Error processing chat message:', errorMessage);
-    res.status(500).json({ error: errorMessage });
-  }
-});
-
 // Endpoint to receive audio file
 app.post('/upload-audio', upload.single('audio'), async (req: Request, res: Response) => {
   try {
