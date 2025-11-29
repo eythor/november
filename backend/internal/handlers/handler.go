@@ -7,13 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/eythor/mcp-server/internal/database"
+	"github.com/eythor/mcp-server/internal/debug"
 	"github.com/google/uuid"
 )
 
@@ -77,8 +77,7 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 	}
 
 	if len(patients) == 0 {
-		// Debug: Log the query that failed (remove in production)
-		log.Printf("DEBUG: SearchPatientsByName returned 0 results for query: '%s'", query)
+		debug.Log("SearchPatientsByName returned 0 results for query: '%s'", query)
 		return map[string]interface{}{
 			"content": []map[string]interface{}{
 				{
@@ -947,6 +946,7 @@ func (h *Handler) AnswerHealthQuestion(question string) (interface{}, error) {
 }
 
 func (h *Handler) ProcessNaturalLanguageQuery(query string, practitionerID string) (interface{}, error) {
+	debug.Log("ProcessNaturalLanguageQuery called with query: '%s'", query)
 	// Use function calling with OpenRouter to process natural language queries
 	response, err := h.callOpenRouterWithTools(query, practitionerID)
 	if err != nil {
@@ -1417,6 +1417,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 func (h *Handler) executeToolLoop(reqBody map[string]interface{}, originalQuery string, practitionerID string) (string, error) {
 	maxIterations := 5
 	messages := reqBody["messages"].([]map[string]interface{})
+	debug.Verbose("Starting tool execution loop for query: '%s'", originalQuery)
 
 	for i := 0; i < maxIterations; i++ {
 		// Update messages in request
@@ -1512,6 +1513,9 @@ func (h *Handler) executeToolLoop(reqBody map[string]interface{}, originalQuery 
 }
 
 func (h *Handler) executeTool(toolName, argumentsJSON string, defaultPractitionerID string) (string, error) {
+	debug.Log("Executing tool: %s", toolName)
+	debug.Trace("Tool arguments: %s", argumentsJSON)
+	
 	var args map[string]interface{}
 	if err := json.Unmarshal([]byte(argumentsJSON), &args); err != nil {
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
@@ -1559,14 +1563,14 @@ func (h *Handler) executeTool(toolName, argumentsJSON string, defaultPractitione
 		if !ok {
 			return "", fmt.Errorf("invalid query parameter")
 		}
-		log.Printf("DEBUG: lookup_patient called with query: '%s'", query)
+		debug.Log("lookup_patient called with query: '%s'", query)
 		result, err := h.LookupPatient(query)
 		if err != nil {
-			log.Printf("DEBUG: lookup_patient error: %v", err)
+			debug.Error("lookup_patient error: %v", err)
 			return "", err
 		}
 		textResult := h.ExtractTextFromMCPResult(result)
-		log.Printf("DEBUG: lookup_patient result: '%s'", textResult)
+		debug.Verbose("lookup_patient result: '%s'", textResult)
 		return textResult, nil
 
 	case "get_medical_history":

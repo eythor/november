@@ -4,17 +4,19 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/eythor/mcp-server/internal/debug"
 )
 
 func GetPatientByID(db *sql.DB, id string) (*Patient, error) {
+	debug.Verbose("GetPatientByID called with id: %s", id)
 	var patient Patient
 	var birthDate, phone, city, state sql.NullString
 
-	err := db.QueryRow(`
-		SELECT id, given_name, family_name, gender, birth_date, phone, city, state
-		FROM patients
-		WHERE id = ?
-	`, id).Scan(
+	query := `SELECT id, given_name, family_name, gender, birth_date, phone, city, state FROM patients WHERE id = ?`
+	debug.SQL(query, id)
+	
+	err := db.QueryRow(query, id).Scan(
 		&patient.ID, &patient.GivenName, &patient.FamilyName,
 		&patient.Gender, &birthDate, &phone,
 		&city, &state,
@@ -41,6 +43,7 @@ func GetPatientByID(db *sql.DB, id string) (*Patient, error) {
 }
 
 func SearchPatientsByName(db *sql.DB, query string) ([]Patient, error) {
+	debug.Verbose("SearchPatientsByName called with query: '%s'", query)
 	query = strings.TrimSpace(query)
 	
 	// Extract potential name from common patterns like "patient named X", "find X", etc.
@@ -131,10 +134,10 @@ func SearchPatientsByName(db *sql.DB, query string) ([]Patient, error) {
 	
 	whereClause += `)`
 	
-	rows, err := db.Query(`
-		SELECT id, given_name, family_name, gender, birth_date, phone, city, state
-		FROM patients
-		`+whereClause, args...)
+	sqlQuery := `SELECT id, given_name, family_name, gender, birth_date, phone, city, state FROM patients ` + whereClause
+	debug.SQL(sqlQuery, args)
+	
+	rows, err := db.Query(sqlQuery, args...)
 
 	if err != nil {
 		return nil, fmt.Errorf("database query failed: %w", err)
@@ -171,6 +174,7 @@ func SearchPatientsByName(db *sql.DB, query string) ([]Patient, error) {
 		patients = append(patients, p)
 	}
 
+	debug.Verbose("SearchPatientsByName found %d patients", len(patients))
 	return patients, nil
 }
 
@@ -225,6 +229,7 @@ func CreateEncounter(db *sql.DB, encounter *Encounter) error {
 }
 
 func GetConditionsByPatientID(db *sql.DB, patientID string) ([]Condition, error) {
+	debug.Verbose("GetConditionsByPatientID called for patient: %s", patientID)
 	rows, err := db.Query(`
 		SELECT id, clinical_status, code, display, patient_id, onset_datetime
 		FROM conditions
@@ -249,6 +254,7 @@ func GetConditionsByPatientID(db *sql.DB, patientID string) ([]Condition, error)
 }
 
 func GetMedicationsByPatientID(db *sql.DB, patientID string) ([]MedicationRequest, error) {
+	debug.Verbose("GetMedicationsByPatientID called for patient: %s", patientID)
 	rows, err := db.Query(`
 		SELECT id, status, medication_display, patient_id, authored_on, dosage_text
 		FROM medication_requests
@@ -367,6 +373,7 @@ func SearchMedicationByName(db *sql.DB, medicationName string) (*Medication, err
 }
 
 func GetObservationsByPatientID(db *sql.DB, patientID string) ([]Observation, error) {
+	debug.Verbose("GetObservationsByPatientID called for patient: %s", patientID)
 	rows, err := db.Query(`
 		SELECT id, status, category, code, display, patient_id, 
 		       effective_datetime, value_quantity, value_unit, value_string

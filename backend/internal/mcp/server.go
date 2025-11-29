@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/eythor/mcp-server/internal/debug"
 	"github.com/eythor/mcp-server/internal/handlers"
 )
 
@@ -38,11 +39,15 @@ type Error struct {
 }
 
 func (s *Server) HandleMessage(message []byte) (*JSONRPCResponse, error) {
+	debug.Trace("MCP HandleMessage received: %s", string(message))
+	
 	var request JSONRPCRequest
 	if err := json.Unmarshal(message, &request); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal request: %w", err)
 	}
 
+	debug.Log("MCP handling method: %s", request.Method)
+	
 	response := &JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      request.ID,
@@ -57,6 +62,7 @@ func (s *Server) HandleMessage(message []byte) (*JSONRPCResponse, error) {
 	case "tools/list":
 		response.Result = s.handleToolsList()
 	case "tools/call":
+		debug.Verbose("Processing tools/call with params: %s", string(request.Params))
 		result, err := s.handleToolsCall(request.Params)
 		if err != nil {
 			response.Error = &Error{
@@ -359,6 +365,9 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 		return nil, fmt.Errorf("failed to unmarshal tool call: %w", err)
 	}
 
+	debug.Log("MCP tool call: %s", toolCall.Name)
+	debug.Verbose("Tool arguments: %s", string(toolCall.Arguments))
+	
 	switch toolCall.Name {
 	case "natural_language_query":
 		var args struct {

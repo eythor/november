@@ -94,6 +94,7 @@ Example initialization:
 
 - `OPENROUTER_API_KEY` - Required. Your OpenRouter API key
 - `DATABASE_PATH` - Optional. Path to SQLite database (default: ./database.db)
+- `MCP_DEBUG` - Optional. Enable debug logging (see Debug Mode section below)
 
 ## Database Schema
 
@@ -135,6 +136,68 @@ make lint       # Run linter
 ├── go.mod                    # Go module definition
 ├── Makefile                  # Build automation
 └── README.md                 # This file
+```
+
+## Debug Mode
+
+The MCP server includes comprehensive debug logging to help troubleshoot issues. Debug output is written to stderr and includes timestamps, file locations, and structured information.
+
+### Enabling Debug Mode
+
+Set the `MCP_DEBUG` environment variable:
+
+```bash
+# Basic debug logging (tool calls, queries, errors)
+export MCP_DEBUG=true
+# or
+export MCP_DEBUG=1
+
+# Verbose logging (includes SQL queries, API responses)
+export MCP_DEBUG=verbose
+
+# Trace logging (includes all message content, very detailed)
+export MCP_DEBUG=trace
+```
+
+### Debug Output Format
+
+```
+[DEBUG] 2024-11-29 15:30:45.123 handler.go:1560 lookup_patient called with query: 'Marty'
+[SQL] 2024-11-29 15:30:45.125 queries.go:145 Query: SELECT ... WHERE given_name LIKE ? | Args: [%Marty%]
+[VERBOSE] 2024-11-29 15:30:45.130 handler.go:1567 lookup_patient found 1 patient(s)
+```
+
+### Debug Levels
+
+- **Off** (default): No debug output
+- **Basic** (`MCP_DEBUG=true`): Tool calls, errors, key operations
+- **Verbose** (`MCP_DEBUG=verbose`): Includes SQL queries, API calls, detailed responses
+- **Trace** (`MCP_DEBUG=trace`): Full message content, maximum detail
+
+### What Gets Logged
+
+- MCP server initialization and configuration
+- All tool calls with their names and arguments
+- Database queries (verbose mode)
+- API requests to OpenRouter (verbose mode)
+- Error conditions with full context
+- Natural language processing flow
+- HTTP server requests and responses (when using HTTP mode)
+
+### Using Debug Mode
+
+```bash
+# Run with basic debug logging
+MCP_DEBUG=true make run
+
+# Run with verbose logging to see SQL queries
+MCP_DEBUG=verbose go run .
+
+# Run HTTP server with trace logging
+MCP_DEBUG=trace make http-server
+
+# Save debug output to a file
+MCP_DEBUG=verbose make run 2> debug.log
 ```
 
 ## Contributing

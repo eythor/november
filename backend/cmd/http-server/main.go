@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/eythor/mcp-server/internal/database"
+	"github.com/eythor/mcp-server/internal/debug"
 	"github.com/eythor/mcp-server/internal/handlers"
 	"github.com/eythor/mcp-server/internal/mcp"
 )
@@ -24,29 +25,37 @@ func NewHTTPServer(mcpServer *mcp.Server) *HTTPServer {
 
 // Handle JSON-RPC requests over HTTP
 func (h *HTTPServer) handleJSONRPC(w http.ResponseWriter, r *http.Request) {
+	debug.Request(r.Method, r.URL.Path, nil)
+	
 	// Set CORS headers for browser access
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 	
 	if r.Method == "OPTIONS" {
+		debug.Response(http.StatusOK, "CORS preflight")
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 	
 	if r.Method != "POST" {
+		debug.Error("Method not allowed: %s", r.Method)
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	var request json.RawMessage
 	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		debug.Error("Invalid JSON: %v", err)
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
+	
+	debug.Verbose("HTTP request body: %s", string(request))
 
 	response, err := h.mcpServer.HandleMessage(request)
 	if err != nil {
+		debug.Error("Error handling message: %v", err)
 		log.Printf("Error handling message: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
@@ -141,16 +150,20 @@ func (h *HTTPServer) handleQuery(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	debug.Log("HTTP server starting...")
+	
 	// Get configuration from environment
 	dbPath := os.Getenv("DATABASE_PATH")
 	if dbPath == "" {
 		dbPath = "./database.db"
 	}
+	debug.Log("Using database at: %s", dbPath)
 
 	apiKey := os.Getenv("OPENROUTER_API_KEY")
 	if apiKey == "" {
 		log.Fatal("OPENROUTER_API_KEY environment variable is required")
 	}
+	debug.Verbose("OPENROUTER_API_KEY configured")
 
 	port := os.Getenv("PORT")
 	if port == "" {
