@@ -24,7 +24,8 @@ test:
 clean:
 	rm -f mcp-server
 	rm -rf tmp/
-	rm -f database.db
+	# Let's comment this out for now
+	# rm -f database.db
 
 db-init:
 	sqlite3 database.db < schema.sql

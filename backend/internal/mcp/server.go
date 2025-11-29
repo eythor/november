@@ -106,6 +106,50 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			},
 		},
 		{
+			"name":        "set_patient_context",
+			"description": "Set the default patient ID for subsequent operations",
+			"inputSchema": map[string]interface{}{
+				"type":     "object",
+				"properties": map[string]interface{}{
+					"patient_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Patient ID to set as default",
+					},
+				},
+				"required": []string{"patient_id"},
+			},
+		},
+		{
+			"name":        "set_practitioner_context",
+			"description": "Set the default practitioner ID for subsequent operations",
+			"inputSchema": map[string]interface{}{
+				"type":     "object",
+				"properties": map[string]interface{}{
+					"practitioner_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Practitioner ID to set as default",
+					},
+				},
+				"required": []string{"practitioner_id"},
+			},
+		},
+		{
+			"name":        "get_context",
+			"description": "Get the current context (default patient and practitioner)",
+			"inputSchema": map[string]interface{}{
+				"type":     "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
+			"name":        "clear_context",
+			"description": "Clear the current context (remove default patient and practitioner)",
+			"inputSchema": map[string]interface{}{
+				"type":     "object",
+				"properties": map[string]interface{}{},
+			},
+		},
+		{
 			"name":        "lookup_patient",
 			"description": "Look up a patient by name or ID",
 			"inputSchema": map[string]interface{}{
@@ -232,6 +276,30 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 			return nil, err
 		}
 		return s.handler.ProcessNaturalLanguageQuery(args.Query)
+
+	case "set_patient_context":
+		var args struct {
+			PatientID string `json:"patient_id"`
+		}
+		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+			return nil, err
+		}
+		return s.handler.SetPatientContext(args.PatientID)
+
+	case "set_practitioner_context":
+		var args struct {
+			PractitionerID string `json:"practitioner_id"`
+		}
+		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+			return nil, err
+		}
+		return s.handler.SetPractitionerContext(args.PractitionerID)
+
+	case "get_context":
+		return s.handler.GetContext()
+
+	case "clear_context":
+		return s.handler.ClearContext()
 
 	case "lookup_patient":
 		var args struct {

@@ -8,15 +8,23 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/eythor/mcp-server/internal/database"
 	"github.com/google/uuid"
 )
 
+type Context struct {
+	PatientID      string `json:"patient_id,omitempty"`
+	PractitionerID string `json:"practitioner_id,omitempty"`
+}
+
 type Handler struct {
-	db     *sql.DB
-	apiKey string
+	db      *sql.DB
+	apiKey  string
+	context Context
+	mu      sync.RWMutex
 }
 
 func NewHandler(db *sql.DB, apiKey string) *Handler {
@@ -29,53 +37,23 @@ func NewHandler(db *sql.DB, apiKey string) *Handler {
 func (h *Handler) LookupPatient(query string) (interface{}, error) {
 	query = strings.TrimSpace(query)
 	
-	var patient database.Patient
-	err := h.db.QueryRow(`
-		SELECT id, given_name, family_name, gender, birth_date, phone, city, state
-		FROM patients
-		WHERE id = ?
-	`, query).Scan(
-		&patient.ID, &patient.GivenName, &patient.FamilyName,
-		&patient.Gender, &patient.BirthDate, &patient.Phone,
-		&patient.City, &patient.State,
-	)
-	
+	// Try exact ID lookup first
+	patient, err := database.GetPatientByID(h.db, query)
 	if err == nil {
 		return map[string]interface{}{
 			"content": []map[string]interface{}{
 				{
 					"type": "text",
-					"text": formatPatientInfo(patient),
+					"text": formatPatientInfo(*patient),
 				},
 			},
 		}, nil
 	}
 	
 	// Try name search
-	searchQuery := "%" + query + "%"
-	rows, err := h.db.Query(`
-		SELECT id, given_name, family_name, gender, birth_date, phone, city, state
-		FROM patients
-		WHERE given_name LIKE ? OR family_name LIKE ? OR (given_name || ' ' || family_name) LIKE ?
-	`, searchQuery, searchQuery, searchQuery)
-	
+	patients, err := database.SearchPatientsByName(h.db, query)
 	if err != nil {
 		return nil, fmt.Errorf("database query failed: %w", err)
-	}
-	defer rows.Close()
-	
-	var patients []database.Patient
-	for rows.Next() {
-		var p database.Patient
-		err := rows.Scan(
-			&p.ID, &p.GivenName, &p.FamilyName,
-			&p.Gender, &p.BirthDate, &p.Phone,
-			&p.City, &p.State,
-		)
-		if err != nil {
-			continue
-		}
-		patients = append(patients, p)
 	}
 	
 	if len(patients) == 0 {
@@ -107,16 +85,26 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 }
 
 func (h *Handler) ScheduleAppointment(patientID, practitionerID, dateTime, appointmentType string) (interface{}, error) {
+	// Use context if IDs not provided
+	patientID = h.GetContextPatientID(patientID)
+	practitionerID = h.GetContextPractitionerID(practitionerID)
+	
+	// Check if we have required IDs
+	if patientID == "" {
+		return nil, fmt.Errorf("patient ID is required (no patient ID provided and none set in context)")
+	}
+	if practitionerID == "" {
+		return nil, fmt.Errorf("practitioner ID is required (no practitioner ID provided and none set in context)")
+	}
+	
 	// Validate patient exists
-	var patientExists bool
-	err := h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM patients WHERE id = ?)", patientID).Scan(&patientExists)
+	patientExists, err := database.CheckPatientExists(h.db, patientID)
 	if err != nil || !patientExists {
 		return nil, fmt.Errorf("patient not found: %s", patientID)
 	}
 	
 	// Validate practitioner exists
-	var practitionerExists bool
-	err = h.db.QueryRow("SELECT EXISTS(SELECT 1 FROM practitioners WHERE id = ?)", practitionerID).Scan(&practitionerExists)
+	practitionerExists, err := database.CheckPractitionerExists(h.db, practitionerID)
 	if err != nil || !practitionerExists {
 		return nil, fmt.Errorf("practitioner not found: %s", practitionerID)
 	}
@@ -135,13 +123,17 @@ func (h *Handler) ScheduleAppointment(patientID, practitionerID, dateTime, appoi
 		appointmentType = "General Consultation"
 	}
 	
-	// Insert new encounter
-	_, err = h.db.Exec(`
-		INSERT INTO encounters (
-			id, resource_type, status, class, type_display,
-			patient_id, practitioner_id, start_datetime
-		) VALUES (?, 'Encounter', 'planned', 'ambulatory', ?, ?, ?, ?)
-	`, encounterID, appointmentType, patientID, practitionerID, appointmentTime)
+	// Create new encounter
+	encounter := &database.Encounter{
+		ID:             encounterID,
+		Status:         "planned",
+		Class:          "ambulatory",
+		TypeDisplay:    &appointmentType,
+		PatientID:      patientID,
+		PractitionerID: &practitionerID,
+		StartDateTime:  appointmentTime.Format(time.RFC3339),
+	}
+	err = database.CreateEncounter(h.db, encounter)
 	
 	if err != nil {
 		return nil, fmt.Errorf("failed to schedule appointment: %w", err)
@@ -160,8 +152,7 @@ func (h *Handler) ScheduleAppointment(patientID, practitionerID, dateTime, appoi
 
 func (h *Handler) CancelAppointment(encounterID string) (interface{}, error) {
 	// Check if encounter exists and is cancellable
-	var status string
-	err := h.db.QueryRow("SELECT status FROM encounters WHERE id = ?", encounterID).Scan(&status)
+	status, err := database.GetEncounterStatus(h.db, encounterID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("appointment not found: %s", encounterID)
@@ -185,7 +176,7 @@ func (h *Handler) CancelAppointment(encounterID string) (interface{}, error) {
 	}
 	
 	// Update status to cancelled
-	_, err = h.db.Exec("UPDATE encounters SET status = 'cancelled' WHERE id = ?", encounterID)
+	err = database.UpdateEncounterStatus(h.db, encounterID, "cancelled")
 	if err != nil {
 		return nil, fmt.Errorf("failed to cancel appointment: %w", err)
 	}
@@ -201,9 +192,15 @@ func (h *Handler) CancelAppointment(encounterID string) (interface{}, error) {
 }
 
 func (h *Handler) GetMedicalHistory(patientID, category string) (interface{}, error) {
-	// Validate patient exists
-	var patientName string
-	err := h.db.QueryRow("SELECT given_name || ' ' || family_name FROM patients WHERE id = ?", patientID).Scan(&patientName)
+	// Use context if patient ID not provided
+	patientID = h.GetContextPatientID(patientID)
+	
+	if patientID == "" {
+		return nil, fmt.Errorf("patient ID is required (no patient ID provided and none set in context)")
+	}
+	
+	// Validate patient exists and get name
+	patientName, err := database.GetPatientName(h.db, patientID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("patient not found: %s", patientID)
@@ -216,7 +213,7 @@ func (h *Handler) GetMedicalHistory(patientID, category string) (interface{}, er
 	
 	switch category {
 	case "conditions", "all":
-		conditions, err := h.getConditions(patientID)
+		conditions, err := database.GetConditionsByPatientID(h.db, patientID)
 		if err == nil && len(conditions) > 0 {
 			result.WriteString("CONDITIONS:\n")
 			for _, c := range conditions {
@@ -235,7 +232,7 @@ func (h *Handler) GetMedicalHistory(patientID, category string) (interface{}, er
 		
 	case "medications":
 		if category == "medications" || category == "all" {
-			medications, err := h.getMedications(patientID)
+			medications, err := database.GetMedicationsByPatientID(h.db, patientID)
 			if err == nil && len(medications) > 0 {
 				result.WriteString("MEDICATIONS:\n")
 				for _, m := range medications {
@@ -256,7 +253,7 @@ func (h *Handler) GetMedicalHistory(patientID, category string) (interface{}, er
 		
 	case "procedures":
 		if category == "procedures" || category == "all" {
-			procedures, err := h.getProcedures(patientID)
+			procedures, err := database.GetProceduresByPatientID(h.db, patientID)
 			if err == nil && len(procedures) > 0 {
 				result.WriteString("PROCEDURES:\n")
 				for _, p := range procedures {
@@ -276,7 +273,7 @@ func (h *Handler) GetMedicalHistory(patientID, category string) (interface{}, er
 		
 	case "immunizations":
 		if category == "immunizations" || category == "all" {
-			immunizations, err := h.getImmunizations(patientID)
+			immunizations, err := database.GetImmunizationsByPatientID(h.db, patientID)
 			if err == nil && len(immunizations) > 0 {
 				result.WriteString("IMMUNIZATIONS:\n")
 				for _, i := range immunizations {
@@ -294,7 +291,7 @@ func (h *Handler) GetMedicalHistory(patientID, category string) (interface{}, er
 		
 	case "allergies":
 		if category == "allergies" || category == "all" {
-			allergies, err := h.getAllergies(patientID)
+			allergies, err := database.GetAllergiesByPatientID(h.db, patientID)
 			if err == nil && len(allergies) > 0 {
 				result.WriteString("ALLERGIES:\n")
 				for _, a := range allergies {
@@ -321,21 +318,10 @@ func (h *Handler) GetMedicalHistory(patientID, category string) (interface{}, er
 
 func (h *Handler) GetMedicationInfo(medicationName string) (interface{}, error) {
 	// First check database for medication
-	var medication struct {
-		Code    string
-		Display string
-		Form    *string
-	}
-	
-	err := h.db.QueryRow(`
-		SELECT code, display, form
-		FROM medications
-		WHERE display LIKE ?
-		LIMIT 1
-	`, "%"+medicationName+"%").Scan(&medication.Code, &medication.Display, &medication.Form)
+	medication, err := database.SearchMedicationByName(h.db, medicationName)
 	
 	var dbInfo string
-	if err == nil {
+	if err == nil && medication != nil {
 		dbInfo = fmt.Sprintf("Found in database: %s (Code: %s)", medication.Display, medication.Code)
 		if medication.Form != nil {
 			dbInfo += fmt.Sprintf("\nForm: %s", *medication.Form)
@@ -372,7 +358,7 @@ func (h *Handler) GetMedicationInfo(medicationName string) (interface{}, error) 
 }
 
 func (h *Handler) AnswerHealthQuestion(question string) (interface{}, error) {
-	prompt := fmt.Sprintf("As a healthcare information assistant, answer this health-related question accurately and helpfully. Always remind users to consult healthcare professionals for medical advice. Question: %s", question)
+	prompt := fmt.Sprintf("As a healthcare information assistant, answer this health-related question accurately and helpfully. Be conversational and don't format responses for textual responses. Be succinct.  %s", question)
 	
 	response, err := h.callOpenRouter(prompt)
 	if err != nil {
@@ -474,8 +460,73 @@ func (h *Handler) callOpenRouter(prompt string) (string, error) {
 }
 
 func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
+	// Get context info
+	h.mu.RLock()
+	hasPatientContext := h.context.PatientID != ""
+	hasPractitionerContext := h.context.PractitionerID != ""
+	h.mu.RUnlock()
+	
+	// Build required fields dynamically based on context
+	scheduleRequired := []string{"datetime"}
+	if !hasPatientContext {
+		scheduleRequired = append(scheduleRequired, "patient_id")
+	}
+	if !hasPractitionerContext {
+		scheduleRequired = append(scheduleRequired, "practitioner_id")
+	}
+	
+	historyRequired := []string{}
+	if !hasPatientContext {
+		historyRequired = append(historyRequired, "patient_id")
+	}
+	
 	// Define available tools for the LLM
 	tools := []map[string]interface{}{
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "set_patient_context",
+				"description": "Set the default patient for subsequent operations",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"patient_id": map[string]interface{}{
+							"type": "string",
+							"description": "Patient ID to set as default",
+						},
+					},
+					"required": []string{"patient_id"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "set_practitioner_context",
+				"description": "Set the default practitioner for subsequent operations",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"practitioner_id": map[string]interface{}{
+							"type": "string",
+							"description": "Practitioner ID to set as default",
+						},
+					},
+					"required": []string{"practitioner_id"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "get_context",
+				"description": "Get the current default patient and practitioner",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{},
+				},
+			},
+		},
 		{
 			"type": "function",
 			"function": map[string]interface{}{
@@ -497,13 +548,23 @@ func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
 			"type": "function",
 			"function": map[string]interface{}{
 				"name": "get_medical_history",
-				"description": "Retrieve patient medical history",
+				"description": "Retrieve patient medical history" + func() string {
+					if hasPatientContext {
+						return " (uses default patient if not specified)"
+					}
+					return ""
+				}(),
 				"parameters": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
 						"patient_id": map[string]interface{}{
 							"type": "string",
-							"description": "Patient ID",
+							"description": "Patient ID" + func() string {
+								if hasPatientContext {
+									return " (optional, uses context if not provided)"
+								}
+								return ""
+							}(),
 						},
 						"category": map[string]interface{}{
 							"type": "string",
@@ -511,7 +572,7 @@ func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
 							"enum": []string{"conditions", "medications", "procedures", "immunizations", "allergies", "all"},
 						},
 					},
-					"required": []string{"patient_id"},
+					"required": historyRequired,
 				},
 			},
 		},
@@ -525,11 +586,21 @@ func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
 					"properties": map[string]interface{}{
 						"patient_id": map[string]interface{}{
 							"type": "string",
-							"description": "Patient ID",
+							"description": "Patient ID" + func() string {
+								if hasPatientContext {
+									return " (optional, uses context if not provided)"
+								}
+								return ""
+							}(),
 						},
 						"practitioner_id": map[string]interface{}{
 							"type": "string",
-							"description": "Practitioner ID",
+							"description": "Practitioner ID" + func() string {
+								if hasPractitionerContext {
+									return " (optional, uses context if not provided)"
+								}
+								return ""
+							}(),
 						},
 						"datetime": map[string]interface{}{
 							"type": "string",
@@ -540,7 +611,7 @@ func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
 							"description": "Type of appointment",
 						},
 					},
-					"required": []string{"patient_id", "practitioner_id", "datetime"},
+					"required": scheduleRequired,
 				},
 			},
 		},
@@ -563,13 +634,16 @@ func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
 		},
 	}
 
+	// Build system prompt with context information
+	systemPrompt := "You are a helpful healthcare assistant. You have access to patient data and can help with medical queries. Use the available tools to answer user questions accurately. Always remind users to consult healthcare professionals for medical advice."
+	systemPrompt += h.GetContextInfo()
+	
 	reqBody := map[string]interface{}{
 		"model": "openai/gpt-4o-mini", // TODO: Decide on another model. 
 		"messages": []map[string]interface{}{
 			{
 				"role":    "system",
-				// TODO:L We need to fine tune this later
-				"content": "You are a helpful healthcare assistant. You have access to patient data and can help with medical queries. Use the available tools to answer user questions accurately. Always remind users to consult healthcare professionals for medical advice.",
+				"content": systemPrompt,
 			},
 			{
 				"role":    "user",
@@ -689,6 +763,42 @@ func (h *Handler) executeTool(toolName, argumentsJSON string) (string, error) {
 	}
 
 	switch toolName {
+	case "set_patient_context":
+		patientID, ok := args["patient_id"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid patient_id parameter")
+		}
+		result, err := h.SetPatientContext(patientID)
+		if err != nil {
+			return "", err
+		}
+		return h.extractTextFromMCPResult(result), nil
+
+	case "set_practitioner_context":
+		practitionerID, ok := args["practitioner_id"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid practitioner_id parameter")
+		}
+		result, err := h.SetPractitionerContext(practitionerID)
+		if err != nil {
+			return "", err
+		}
+		return h.extractTextFromMCPResult(result), nil
+
+	case "get_context":
+		result, err := h.GetContext()
+		if err != nil {
+			return "", err
+		}
+		return h.extractTextFromMCPResult(result), nil
+
+	case "clear_context":
+		result, err := h.ClearContext()
+		if err != nil {
+			return "", err
+		}
+		return h.extractTextFromMCPResult(result), nil
+
 	case "lookup_patient":
 		query, ok := args["query"].(string)
 		if !ok {
@@ -701,9 +811,9 @@ func (h *Handler) executeTool(toolName, argumentsJSON string) (string, error) {
 		return h.extractTextFromMCPResult(result), nil
 
 	case "get_medical_history":
-		patientID, ok := args["patient_id"].(string)
-		if !ok {
-			return "", fmt.Errorf("invalid patient_id parameter")
+		patientID := ""
+		if pid, exists := args["patient_id"].(string); exists {
+			patientID = pid
 		}
 		category := "all"
 		if cat, exists := args["category"].(string); exists {
@@ -716,13 +826,13 @@ func (h *Handler) executeTool(toolName, argumentsJSON string) (string, error) {
 		return h.extractTextFromMCPResult(result), nil
 
 	case "schedule_appointment":
-		patientID, ok := args["patient_id"].(string)
-		if !ok {
-			return "", fmt.Errorf("invalid patient_id parameter")
+		patientID := ""
+		if pid, exists := args["patient_id"].(string); exists {
+			patientID = pid
 		}
-		practitionerID, ok := args["practitioner_id"].(string)
-		if !ok {
-			return "", fmt.Errorf("invalid practitioner_id parameter")
+		practitionerID := ""
+		if prid, exists := args["practitioner_id"].(string); exists {
+			practitionerID = prid
 		}
 		datetime, ok := args["datetime"].(string)
 		if !ok {
@@ -782,121 +892,3 @@ func formatPatientInfo(p database.Patient) string {
 	return info
 }
 
-func (h *Handler) getConditions(patientID string) ([]database.Condition, error) {
-	rows, err := h.db.Query(`
-		SELECT id, clinical_status, code, display, patient_id, onset_datetime
-		FROM conditions
-		WHERE patient_id = ?
-		ORDER BY onset_datetime DESC
-	`, patientID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	
-	var conditions []database.Condition
-	for rows.Next() {
-		var c database.Condition
-		err := rows.Scan(&c.ID, &c.ClinicalStatus, &c.Code, &c.Display, &c.PatientID, &c.OnsetDateTime)
-		if err != nil {
-			continue
-		}
-		conditions = append(conditions, c)
-	}
-	return conditions, nil
-}
-
-func (h *Handler) getMedications(patientID string) ([]database.MedicationRequest, error) {
-	rows, err := h.db.Query(`
-		SELECT id, status, medication_display, patient_id, authored_on, dosage_text
-		FROM medication_requests
-		WHERE patient_id = ?
-		ORDER BY authored_on DESC
-	`, patientID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	
-	var medications []database.MedicationRequest
-	for rows.Next() {
-		var m database.MedicationRequest
-		err := rows.Scan(&m.ID, &m.Status, &m.MedicationDisplay, &m.PatientID, &m.AuthoredOn, &m.DosageText)
-		if err != nil {
-			continue
-		}
-		medications = append(medications, m)
-	}
-	return medications, nil
-}
-
-func (h *Handler) getProcedures(patientID string) ([]database.Procedure, error) {
-	rows, err := h.db.Query(`
-		SELECT id, status, display, patient_id, performed_datetime
-		FROM procedures
-		WHERE patient_id = ?
-		ORDER BY performed_datetime DESC
-	`, patientID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	
-	var procedures []database.Procedure
-	for rows.Next() {
-		var p database.Procedure
-		err := rows.Scan(&p.ID, &p.Status, &p.Display, &p.PatientID, &p.PerformedDateTime)
-		if err != nil {
-			continue
-		}
-		procedures = append(procedures, p)
-	}
-	return procedures, nil
-}
-
-func (h *Handler) getImmunizations(patientID string) ([]database.Immunization, error) {
-	rows, err := h.db.Query(`
-		SELECT id, status, vaccine_display, patient_id, occurrence_datetime
-		FROM immunizations
-		WHERE patient_id = ?
-		ORDER BY occurrence_datetime DESC
-	`, patientID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	
-	var immunizations []database.Immunization
-	for rows.Next() {
-		var i database.Immunization
-		err := rows.Scan(&i.ID, &i.Status, &i.VaccineDisplay, &i.PatientID, &i.OccurrenceDateTime)
-		if err != nil {
-			continue
-		}
-		immunizations = append(immunizations, i)
-	}
-	return immunizations, nil
-}
-
-func (h *Handler) getAllergies(patientID string) ([]database.AllergyIntolerance, error) {
-	rows, err := h.db.Query(`
-		SELECT id, clinical_status, display, patient_id, criticality
-		FROM allergy_intolerances
-		WHERE patient_id = ?
-	`, patientID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	
-	var allergies []database.AllergyIntolerance
-	for rows.Next() {
-		var a database.AllergyIntolerance
-		err := rows.Scan(&a.ID, &a.ClinicalStatus, &a.Display, &a.PatientID, &a.Criticality)
-		if err != nil {
-			continue
-		}
-		allergies = append(allergies, a)
-	}
-	return allergies, nil
-}
