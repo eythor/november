@@ -848,7 +848,7 @@ Important guidelines:
 
 	// Use OpenRouter with a more capable model for medical information
 	reqBody := map[string]interface{}{
-		"model": "google/gemini-2.0-flash-exp:free", // Using a more capable model for medical info
+		"model": "google/gemini-2.5-flash", // Using a more capable model for medical info
 		"messages": []map[string]interface{}{
 			{
 				"role":    "system",
