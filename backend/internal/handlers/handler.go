@@ -362,7 +362,9 @@ func (h *Handler) GetMedicalHistory(patientID, category string) (interface{}, er
 				for _, o := range observations {
 					result.WriteString(fmt.Sprintf("• %s\n", o.Display))
 					result.WriteString(fmt.Sprintf("  Category: %s\n", o.Category))
-					result.WriteString(fmt.Sprintf("  Date: %s\n", o.EffectiveDateTime))
+					if o.EffectiveDateTime != nil {
+						result.WriteString(fmt.Sprintf("  Date: %s\n", *o.EffectiveDateTime))
+					}
 					if o.ValueQuantity != nil && o.ValueUnit != nil {
 						result.WriteString(fmt.Sprintf("  Value: %.2f %s\n", *o.ValueQuantity, *o.ValueUnit))
 					} else if o.ValueString != nil {
@@ -1744,34 +1746,39 @@ func calculateAge(birthDateStr string) (int, error) {
 		return 0, fmt.Errorf("birth date is empty")
 	}
 
-	// Try common date formats
+	// Prioritize ISO 8601 formats
 	formats := []string{
-		"2006-01-02",           // YYYY-MM-DD (ISO date)
+		"2006-01-02",           // YYYY-MM-DD
 		"2006-01-02T15:04:05Z", // ISO 8601 with time
 		"2006-01-02T15:04:05-07:00",
-		"01/02/2006", // MM/DD/YYYY
-		"02/01/2006", // DD/MM/YYYY
 	}
 
 	var birthDate time.Time
 	var err error
+	parsed := false
+
 	for _, format := range formats {
 		birthDate, err = time.Parse(format, birthDateStr)
 		if err == nil {
+			parsed = true
 			break
 		}
 	}
 
-	if err != nil {
-		return 0, fmt.Errorf("unable to parse birth date: %s", birthDateStr)
+	if !parsed {
+		return 0, fmt.Errorf("unable to parse birth date: %s (expected YYYY-MM-DD)", birthDateStr)
 	}
 
 	now := time.Now()
 	age := now.Year() - birthDate.Year()
 
-	// Adjust if birthday hasn't occurred this year
-	if now.YearDay() < birthDate.YearDay() {
+	// Correct age calculation using Month and Day comparison
+	if now.Month() < birthDate.Month() || (now.Month() == birthDate.Month() && now.Day() < birthDate.Day()) {
 		age--
+	}
+
+	if age < 0 {
+		return 0, fmt.Errorf("birth date is in the future")
 	}
 
 	return age, nil
