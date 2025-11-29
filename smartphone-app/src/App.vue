@@ -45,6 +45,7 @@ function pushLocalMessage(payload: Partial<Message>) {
 
 const currentAudio = ref<HTMLAudioElement | null>(null);
 const playingMsgId = ref<string | null>(null);
+const isAudioPlaying = ref(false);
 
 function togglePlay(msg: Message) {
   console.log('togglePlay called for message:', msg.id, 'hasAudioData:', !!msg.audioData);
@@ -55,6 +56,7 @@ function togglePlay(msg: Message) {
     currentAudio.value.currentTime = 0;
     currentAudio.value = null;
     playingMsgId.value = null;
+    isAudioPlaying.value = false;
   }
 
   // If no audio or switching, create new
@@ -81,18 +83,26 @@ function togglePlay(msg: Message) {
       console.log('Audio can play, readyState:', audio.readyState);
     };
 
-    audio.onended = () => {
-      console.log('Audio ended');
-      playingMsgId.value = null;
-      currentAudio.value = null;
+    audio.onplay = () => {
+      console.log('Audio started playing');
+      isAudioPlaying.value = true;
     };
 
     audio.onpause = () => {
       console.log('Audio paused, currentTime:', audio.currentTime);
+      isAudioPlaying.value = false;
       if (audio.currentTime === 0 || audio.ended) {
         playingMsgId.value = null;
         currentAudio.value = null;
+        isAudioPlaying.value = false;
       }
+    };
+
+    audio.onended = () => {
+      console.log('Audio ended');
+      playingMsgId.value = null;
+      currentAudio.value = null;
+      isAudioPlaying.value = false;
     };
 
     audio.onerror = (e) => {
@@ -104,6 +114,7 @@ function togglePlay(msg: Message) {
       });
       playingMsgId.value = null;
       currentAudio.value = null;
+      isAudioPlaying.value = false;
     };
 
     audio.onloadeddata = () => {
@@ -112,6 +123,7 @@ function togglePlay(msg: Message) {
 
     currentAudio.value = audio;
     playingMsgId.value = msg.id;
+    isAudioPlaying.value = false;
 
     // Play the audio
     const playPromise = audio.play();
@@ -130,6 +142,7 @@ function togglePlay(msg: Message) {
           });
           playingMsgId.value = null;
           currentAudio.value = null;
+          isAudioPlaying.value = false;
         });
     }
   } else {
@@ -138,6 +151,7 @@ function togglePlay(msg: Message) {
       if (currentAudio.value.paused) {
         currentAudio.value.play().catch((error) => {
           console.error('Error resuming audio:', error);
+          isAudioPlaying.value = false;
         });
       } else {
         currentAudio.value.pause();
@@ -147,7 +161,7 @@ function togglePlay(msg: Message) {
 }
 
 function isPlaying(msg: Message) {
-  return playingMsgId.value === msg.id;
+  return playingMsgId.value === msg.id && isAudioPlaying.value;
 }
 
 // --- user sends voice ---

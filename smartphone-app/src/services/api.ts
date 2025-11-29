@@ -17,8 +17,14 @@ export interface AudioResponse {
 
 export async function sendAudioMessage(audioFile: File, _message: Message): Promise<AudioResponse> {
   try {
+    const practitionerId = import.meta.env.VITE_PRACTITIONER_ID;
+    if (!practitionerId) {
+      throw new Error('VITE_PRACTITIONER_ID environment variable is required');
+    }
+
     const formData = new FormData();
     formData.append('audio', audioFile);
+    formData.append('practitionerId', practitionerId);
 
     const response = await fetch(`${API_BASE_URL}/upload-audio`, {
       method: 'POST',
