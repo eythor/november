@@ -4,7 +4,7 @@ build:
 	go build -o mcp-server .
 
 build-http:
-	go build -o mcp-http-server cmd/http/main.go
+	go build -o mcp-http-server ./cmd/http-server
 
 run: build
 	./mcp-server
@@ -16,7 +16,7 @@ dev:
 	air
 
 http-server:
-	go run cmd/http/main.go
+	go run ./cmd/http-server
 
 test:
 	go test -v ./...

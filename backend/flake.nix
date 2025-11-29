@@ -70,7 +70,12 @@
             echo "  DATABASE_PATH             - Path to SQLite database (default: ./database.db)"
             echo ""
 
-            
+            if [ ! -f .env ]; then
+              echo "Sourcing env..."
+              source .env
+            fi
+
+
             # Create database if it doesn't exist
             if [ ! -f database.db ]; then
               echo "Creating initial database..."
@@ -79,7 +84,7 @@
             fi
           '';
 
-          OPENROUTER_API_KEY = pkgs.builtins.getEnv "OPENROUTER_API_KEY";
+          OPENROUTER_API_KEY = builtins.getEnv "OPENROUTER_API_KEY";
         };
       });
 }

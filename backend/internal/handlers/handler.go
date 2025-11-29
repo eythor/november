@@ -40,11 +40,20 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 	// Try exact ID lookup first
 	patient, err := database.GetPatientByID(h.db, query)
 	if err == nil {
+		// Auto-set context for single patient found
+		h.mu.Lock()
+		h.context.PatientID = patient.ID
+		h.mu.Unlock()
+		
+		resultText := formatPatientInfo(*patient)
+		resultText += fmt.Sprintf("\n\n✓ Context updated: Default patient set to %s %s (ID: %s)", 
+			patient.GivenName, patient.FamilyName, patient.ID)
+		
 		return map[string]interface{}{
 			"content": []map[string]interface{}{
 				{
 					"type": "text",
-					"text": formatPatientInfo(*patient),
+					"text": resultText,
 				},
 			},
 		}, nil
@@ -67,12 +76,35 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 		}, nil
 	}
 	
+	// If exactly one patient found, auto-set context
+	if len(patients) == 1 {
+		p := patients[0]
+		h.mu.Lock()
+		h.context.PatientID = p.ID
+		h.mu.Unlock()
+		
+		resultText := formatPatientInfo(p)
+		resultText += fmt.Sprintf("\n\n✓ Context updated: Default patient set to %s %s (ID: %s)", 
+			p.GivenName, p.FamilyName, p.ID)
+		
+		return map[string]interface{}{
+			"content": []map[string]interface{}{
+				{
+					"type": "text",
+					"text": resultText,
+				},
+			},
+		}, nil
+	}
+	
+	// Multiple patients found - don't auto-set context
 	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Found %d patient(s) matching '%s':\n\n", len(patients), query))
+	result.WriteString(fmt.Sprintf("Found %d patients matching '%s':\n\n", len(patients), query))
 	for _, p := range patients {
 		result.WriteString(formatPatientInfo(p))
 		result.WriteString("\n---\n")
 	}
+	result.WriteString("\nNote: Multiple patients found. Use 'set_patient_context' with a specific patient ID to set the default.")
 	
 	return map[string]interface{}{
 		"content": []map[string]interface{}{
@@ -639,7 +671,8 @@ func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
 	systemPrompt += h.GetContextInfo()
 	
 	reqBody := map[string]interface{}{
-		"model": "openai/gpt-4o-mini", // TODO: Decide on another model. 
+		// "model": "openai/gpt-4o-mini", // TODO: Decide on another model. 
+		"model" : "google/gemini-2.5-flash",
 		"messages": []map[string]interface{}{
 			{
 				"role":    "system",
@@ -656,6 +689,7 @@ func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
 		"max_tokens": 1000,
 	}
 
+	// return log.Printf("Sending request to google/gemini-2.5-flash")
 	return h.executeToolLoop(reqBody, query)
 }
 
