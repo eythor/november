@@ -618,7 +618,7 @@ func (h *Handler) GetMedicationInfo(medicationName string) (interface{}, error) 
 	}
 
 	// Use OpenRouter to get general medication information
-	prompt := fmt.Sprintf("Provide brief, factual medical information about %s including: 1) What it's used for, 2) Common dosage, 3) Important side effects or warnings. Keep response under 200 words.", medicationName)
+	prompt := fmt.Sprintf("For the medication %s, provide: 1) Primary indications, 2) Standard dosing regimens, 3) Key contraindications and drug interactions, 4) Significant adverse effects. Be concise and clinically focused.", medicationName)
 
 	aiResponse, err := h.callOpenRouter(prompt)
 	if err != nil {
@@ -883,7 +883,7 @@ Important guidelines:
 		"messages": []map[string]interface{}{
 			{
 				"role":    "system",
-				"content": "You are a knowledgeable medical information assistant. Provide accurate, evidence-based medical information while always reminding users to consult healthcare professionals for personal medical decisions.",
+				"content": "You are an expert physician consultant providing evidence-based medical guidance to a healthcare practitioner. Provide accurate, current clinical guidelines and best practices. Be factual, specific, and cite relevant guidelines when applicable.",
 			},
 			{
 				"role":    "user",
@@ -1000,7 +1000,7 @@ func (h *Handler) callOpenRouter(prompt string) (string, error) {
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are a helpful healthcare information assistant. Provide accurate, factual information. Always remind users to consult healthcare professionals for medical advice.",
+				"content": "You are an expert physician consultant providing information to a healthcare practitioner. Be factual, succinct, and use appropriate medical terminology. Focus on clinically relevant information.",
 			},
 			{
 				"role":    "user",
@@ -1420,12 +1420,21 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 	}
 
 	// Build system prompt with context information
-	systemPrompt := "You are a helpful healthcare assistant. You have access to patient data and can help with medical queries. Use the available tools to answer user questions accurately. Always reply in english. CRITICAL: Keep responses extremely brief and concise - aim for 2-4 sentences maximum. Your responses will be converted to audio, so brevity is essential."
+	systemPrompt := `You are an expert physician consultant providing support to a practitioner who is currently seeing a patient. You are highly knowledgeable, evidence-based, and provide factual, clinically relevant information.
+
+Key behaviors:
+• You are speaking to a healthcare practitioner (not the patient)
+• Be succinct and to-the-point - the practitioner needs quick, actionable information
+• Focus on clinical facts and evidence-based recommendations
+• Assume the practitioner has medical knowledge - use appropriate medical terminology
+• Keep responses to 2-4 sentences maximum (responses will be converted to audio)
+• When discussing the patient, refer to them as "the patient" or by name if known
+• Provide specific, actionable guidance when possible`
 	
 	// Add specific guidance when we have patient context
 	contextInfo := h.GetContextInfo()
 	if strings.Contains(contextInfo, "Patient Medical Summary") {
-		systemPrompt += "\n\nYou have the current patient's medical summary available. Use this information to provide more personalized and relevant responses. Consider the patient's conditions, medications, and allergies when answering questions or making recommendations."
+		systemPrompt += "\n\nThe patient's medical summary is available below. Consider their specific conditions, current medications, recent encounters, and allergies when providing recommendations. Be aware of potential drug interactions and contraindications based on their medical history."
 	}
 	systemPrompt += contextInfo
 
