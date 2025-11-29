@@ -30,8 +30,16 @@ export const useChatStore = defineStore("chat", () => {
       delivered: msg.delivered ?? false,
     };
     messages.value.push(m);
-    return m;
+    // Return the index for patching
+    return m.id;
   }
 
-  return { messages, addMessage };
+  function patchMessage(id: string, patch: Partial<Message>) {
+    const idx = messages.value.findIndex((m) => m.id === id);
+    if (idx !== -1) {
+      messages.value[idx] = { ...messages.value[idx], ...patch };
+    }
+  }
+
+  return { messages, addMessage, patchMessage };
 });
