@@ -2,7 +2,9 @@
   <div
     class="h-screen flex flex-col bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
   >
-    <header class="flex items-center justify-center py-4 px-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+    <header
+      class="flex items-center justify-center py-4 px-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+    >
       <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">VoiceMed</h1>
     </header>
     <MessageList
@@ -15,9 +17,7 @@
       :handle-time-update="handleTimeUpdate"
       :handle-duration="handleDuration"
     />
-    <Footer
-      @onVoiceRecorded="onVoiceRecorded"
-    />
+    <Footer @onVoiceRecorded="onVoiceRecorded" />
   </div>
 </template>
 
@@ -48,7 +48,6 @@ function pushLocalMessage(payload: Partial<Message>) {
   nextTick(scrollToBottom);
   return id;
 }
-
 
 // Simple state: just track which message is playing
 const playingMsgId = ref<string | null>(null);
@@ -112,36 +111,56 @@ async function onVoiceRecorded(file: File) {
     reader.readAsDataURL(file);
   });
 
-  // Get actual duration from the audio file
-  const duration = await new Promise<number>((resolve) => {
+  // Get duration from the audio file
+  const duration = await new Promise<number>((resolve, reject) => {
     const audio = new Audio(audioData);
+    let resolved = false;
+
     audio.onloadedmetadata = () => {
+      if (resolved) return;
+      resolved = true;
       const dur = audio.duration;
       // Ensure duration is finite and valid
       if (isFinite(dur) && dur > 0) {
         resolve(dur);
       } else {
-        resolve(Math.floor(Math.random() * 5) + 3); // fallback to fake duration
+        reject(new Error("Invalid audio duration"));
       }
     };
+
     audio.onerror = () => {
-      resolve(Math.floor(Math.random() * 5) + 3); // fallback to fake duration
+      if (resolved) return;
+      resolved = true;
+      reject(new Error("Failed to load audio metadata"));
     };
-    // Timeout fallback in case metadata never loads
+
+    // Timeout fallback - if metadata doesn't load, proceed anyway (assume valid)
     setTimeout(() => {
-      if (!isFinite(audio.duration) || audio.duration <= 0) {
-        resolve(Math.floor(Math.random() * 5) + 3);
+      if (!resolved) {
+        resolved = true;
+        // If we can't get duration, proceed anyway (assume it's valid)
+        resolve(999); // Large value so it passes the check
       }
-    }, 2000);
+    }, 3000);
+  }).catch(() => {
+    // If we can't determine duration, proceed anyway (assume it's valid)
+    console.warn("Could not determine audio duration, proceeding anyway");
+    return 999; // Large value so it passes the check
   });
+
+  // Discard audio shorter than 2 seconds (only reject short snippets)
+  if (duration < 2.0) {
+    console.log(`Audio too short (${duration.toFixed(2)}s), discarding`);
+    return;
+  }
 
   const id = pushLocalMessage({
     role: "user",
     type: "audio",
     duration: Math.floor(duration),
-    audioData: audioData
+    audioData: audioData,
   });
-  const message = store.messages.find(m => m.id === id);
+  const message = store.messages.find((m) => m.id === id);
 
   if (message) {
     // Immediately add a typing indicator message
@@ -155,19 +174,21 @@ async function onVoiceRecorded(file: File) {
 
     try {
       const response = await sendAudioMessage(file, message);
+
+      // Mark message as delivered
       store.patchMessage(id, { delivered: true, sentAt: Date.now() });
 
       // Handle backend reply if present
       if (response && response.reply) {
         const audioData = response.reply.audio
-          ? `data:${response.reply.audioMimetype || 'audio/mpeg'};base64,${response.reply.audio}`
+          ? `data:${response.reply.audioMimetype || "audio/mpeg"};base64,${response.reply.audio}`
           : undefined;
 
-        console.log('Received reply:', {
+        console.log("Received reply:", {
           type: response.reply.type,
           hasAudio: !!audioData,
           audioLength: audioData?.length,
-          duration: response.reply.duration
+          duration: response.reply.duration,
         });
 
         // Update the typing message with the actual response
@@ -180,11 +201,11 @@ async function onVoiceRecorded(file: File) {
         });
 
         // Auto-play audio if it's an audio message
-        if (response.reply.type === 'audio' && audioData) {
+        if (response.reply.type === "audio" && audioData) {
           // Wait for the component to mount and wavesurfer to be ready
           nextTick(() => {
             setTimeout(() => {
-              const newMessage = store.messages.find(m => m.id === typingMessageId);
+              const newMessage = store.messages.find((m) => m.id === typingMessageId);
               if (newMessage) {
                 // Set playing state - AudioWaveform will handle the actual playback
                 playingMsgId.value = newMessage.id;
@@ -202,7 +223,17 @@ async function onVoiceRecorded(file: File) {
 
       nextTick(scrollToBottom);
     } catch (error) {
-      console.error('Failed to send audio message:', error);
+      console.error("Failed to send audio message:", error);
+
+      // Check if it's a "too short" error - if so, remove both messages
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes("too short") || errorMessage.includes("400")) {
+        // Remove the user message and typing indicator
+        store.removeMessage(id);
+        store.removeMessage(typingMessageId);
+        return;
+      }
+
       // Update typing message to show error
       store.patchMessage(typingMessageId, {
         isTyping: false,

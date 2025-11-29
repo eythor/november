@@ -3,3 +3,4 @@ data/
 *.ids
 *.db
 *.csv
+.DS_Store

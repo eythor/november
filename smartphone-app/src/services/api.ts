@@ -1,5 +1,4 @@
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:3000";
 
 export interface AudioResponse {
   message: string;
@@ -19,27 +18,36 @@ export async function sendAudioMessage(audioFile: File, _message: Message): Prom
   try {
     const practitionerId = import.meta.env.VITE_PRACTITIONER_ID;
     if (!practitionerId) {
-      throw new Error('VITE_PRACTITIONER_ID environment variable is required');
+      throw new Error("VITE_PRACTITIONER_ID environment variable is required");
     }
 
     const formData = new FormData();
-    formData.append('audio', audioFile);
-    formData.append('practitionerId', practitionerId);
+    formData.append("audio", audioFile);
+    formData.append("practitionerId", practitionerId);
 
     const response = await fetch(`${API_BASE_URL}/upload-audio`, {
-      method: 'POST',
+      method: "POST",
       body: formData,
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to send audio: ${response.statusText}`);
+      // Try to extract error message from response body
+      let errorMessage = response.statusText;
+      try {
+        const errorData = (await response.json()) as { error?: string };
+        if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+      } catch {
+        // If parsing fails, use statusText
+      }
+      throw new Error(errorMessage);
     }
 
-    const data = await response.json() as AudioResponse;
+    const data = (await response.json()) as AudioResponse;
     return data;
   } catch (error) {
-    console.error('Error sending audio message:', error);
+    console.error("Error sending audio message:", error);
     throw error;
   }
 }
-

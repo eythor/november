@@ -8,7 +8,11 @@ import {
   needsConversion,
   convertAudioToWav,
 } from "./lib/audio.js";
-import { textToSpeech, estimateAudioDuration, stripMarkdownForTTS } from "./lib/tts.js";
+import {
+  textToSpeech,
+  estimateAudioDuration,
+  stripMarkdownForTTS,
+} from "./lib/tts.js";
 import { transcribeAudio } from "./lib/openrouter.js";
 
 const app = express();
@@ -162,11 +166,41 @@ app.post(
       const cleanedTextForTTS = stripMarkdownForTTS(responseText);
 
       // Generate TTS audio from cleaned backend response
-      console.log("Generating audio response...");
-      const ttsAudioBuffer = await textToSpeech(cleanedTextForTTS);
-      const audioBase64 = encodeAudioToBase64(ttsAudioBuffer);
+      // If TTS fails, fall back to text-only response
+      let reply: {
+        type: "audio" | "text";
+        text: string;
+        audio?: string;
+        audioMimetype?: string;
+        duration?: number;
+      };
 
-      const estimatedDuration = estimateAudioDuration(cleanedTextForTTS);
+      try {
+        console.log("Generating audio response...");
+        const ttsAudioBuffer = await textToSpeech(cleanedTextForTTS);
+        const audioBase64 = encodeAudioToBase64(ttsAudioBuffer);
+        const estimatedDuration = estimateAudioDuration(cleanedTextForTTS);
+
+        reply = {
+          type: "audio",
+          text: responseText,
+          audio: audioBase64,
+          audioMimetype: "audio/mpeg",
+          duration: estimatedDuration,
+        };
+      } catch (ttsError) {
+        const ttsErrorMessage =
+          ttsError instanceof Error ? ttsError.message : "Unknown TTS error";
+        console.warn(
+          `TTS failed: ${ttsErrorMessage}. Sending text-only response.`
+        );
+
+        // Send text-only response when TTS fails
+        reply = {
+          type: "text",
+          text: responseText,
+        };
+      }
 
       res.json({
         message: "Audio file received and transcribed successfully",
@@ -174,13 +208,7 @@ app.post(
         mimetype: req.file.mimetype,
         size: req.file.size,
         transcription: transcription,
-        reply: {
-          type: "audio",
-          text: responseText,
-          audio: audioBase64,
-          audioMimetype: "audio/mpeg",
-          duration: estimatedDuration,
-        },
+        reply: reply,
       });
     } catch (error) {
       const errorMessage =
