@@ -237,6 +237,20 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			},
 		},
 		{
+			"name":        "get_medical_guidelines",
+			"description": "Get comprehensive medical guidelines, medication dosages, treatment protocols, and clinical best practices",
+			"inputSchema": map[string]interface{}{
+				"type":     "object",
+				"properties": map[string]interface{}{
+					"query": map[string]interface{}{
+						"type":        "string",
+						"description": "Medical query (e.g., 'metformin dosing for type 2 diabetes', 'hypertension treatment guidelines', 'warfarin INR monitoring')",
+					},
+				},
+				"required": []string{"query"},
+			},
+		},
+		{
 			"name":        "answer_health_question",
 			"description": "Answer general health-related questions using AI",
 			"inputSchema": map[string]interface{}{
@@ -352,6 +366,15 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 			return nil, err
 		}
 		return s.handler.GetMedicationInfo(args.MedicationName)
+
+	case "get_medical_guidelines":
+		var args struct {
+			Query string `json:"query"`
+		}
+		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+			return nil, err
+		}
+		return s.handler.GetMedicalGuidelines(args.Query)
 
 	case "answer_health_question":
 		var args struct {

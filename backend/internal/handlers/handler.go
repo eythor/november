@@ -413,6 +413,106 @@ func (h *Handler) GetMedicationInfo(medicationName string) (interface{}, error) 
 	}, nil
 }
 
+func (h *Handler) GetMedicalGuidelines(query string) (interface{}, error) {
+	// Build a comprehensive prompt for medical guidelines and information
+	systemContext := `You are a medical information assistant providing evidence-based information about:
+- Clinical guidelines and best practices
+- Medication information (uses, dosages, interactions, contraindications)
+- Treatment protocols and recommendations
+- Diagnostic criteria and procedures
+- Medical terminology and conditions
+
+Important guidelines:
+1. Provide accurate, evidence-based information
+2. Include typical dosage ranges when discussing medications
+3. Mention important contraindications and warnings
+4. Reference standard guidelines (e.g., WHO, CDC, FDA) when applicable
+5. Always remind users to consult healthcare professionals for personal medical advice
+6. Be comprehensive but concise (aim for 300-500 words for detailed queries)`
+
+	prompt := fmt.Sprintf("%s\n\nUser Query: %s", systemContext, query)
+	
+	// Use OpenRouter with a more capable model for medical information
+	reqBody := map[string]interface{}{
+		"model": "google/gemini-2.0-flash-exp:free",  // Using a more capable model for medical info
+		"messages": []map[string]interface{}{
+			{
+				"role":    "system",
+				"content": "You are a knowledgeable medical information assistant. Provide accurate, evidence-based medical information while always reminding users to consult healthcare professionals for personal medical decisions.",
+			},
+			{
+				"role":    "user",
+				"content": prompt,
+			},
+		},
+		"temperature": 0.2,  // Lower temperature for factual accuracy
+		"max_tokens":  1500,  // Allow longer responses for detailed medical info
+	}
+	
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+	
+	req, err := http.NewRequest("POST", "https://openrouter.ai/api/v1/chat/completions", bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	
+	req.Header.Set("Authorization", "Bearer "+h.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HTTP-Referer", "https://github.com/eythor/mcp-server")
+	req.Header.Set("X-Title", "Healthcare MCP Server")
+	
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (%d): %s", resp.StatusCode, string(body))
+	}
+	
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+	
+	if len(result.Choices) == 0 {
+		return nil, fmt.Errorf("no response from API")
+	}
+	
+	response := result.Choices[0].Message.Content
+	
+	// Add context information if available
+	if h.context.PatientID != "" {
+		response += fmt.Sprintf("\n\nNote: This information is general medical guidance. For patient-specific recommendations for Patient ID %s, please consult with the treating physician.", h.context.PatientID)
+	}
+	
+	return map[string]interface{}{
+		"content": []map[string]interface{}{
+			{
+				"type": "text",
+				"text": response,
+			},
+		},
+	}, nil
+}
+
 func (h *Handler) AnswerHealthQuestion(question string) (interface{}, error) {
 	prompt := fmt.Sprintf("As a healthcare information assistant, answer this health-related question accurately and helpfully. Be conversational and don't format responses for textual responses. Be succinct.  %s", question)
 	
@@ -688,6 +788,23 @@ func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
 				},
 			},
 		},
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name": "get_medical_guidelines",
+				"description": "Get comprehensive medical guidelines, dosages, treatment protocols, and clinical best practices",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"query": map[string]interface{}{
+							"type": "string",
+							"description": "Medical query (e.g., 'diabetes management', 'antibiotic dosing', 'hypertension guidelines')",
+						},
+					},
+					"required": []string{"query"},
+				},
+			},
+		},
 	}
 
 	// Build system prompt with context information
@@ -912,6 +1029,17 @@ func (h *Handler) executeTool(toolName, argumentsJSON string) (string, error) {
 			return "", fmt.Errorf("invalid medication_name parameter")
 		}
 		result, err := h.GetMedicationInfo(medicationName)
+		if err != nil {
+			return "", err
+		}
+		return h.extractTextFromMCPResult(result), nil
+	
+	case "get_medical_guidelines":
+		query, ok := args["query"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid query parameter")
+		}
+		result, err := h.GetMedicalGuidelines(query)
 		if err != nil {
 			return "", err
 		}

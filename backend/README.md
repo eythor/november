@@ -6,12 +6,19 @@ This is an MCP (Model Context Protocol) server implementation in Go that provide
 
 The MCP server provides the following tools:
 
-- **lookup_patient** - Look up patients by name or ID
+- **lookup_patient** - Look up patients by name or ID (automatically sets context when single patient found)
 - **schedule_appointment** - Schedule appointments for patients
 - **cancel_appointment** - Cancel existing appointments
-- **get_medical_history** - Retrieve patient medical history (conditions, medications, procedures, immunizations, allergies)
+- **get_medical_history** - Retrieve patient medical history (conditions, medications, procedures, immunizations, allergies, observations)
 - **get_medication_info** - Get information about medications using AI
+- **get_medical_guidelines** - Get comprehensive medical guidelines, dosages, treatment protocols, and clinical best practices using AI
 - **answer_health_question** - Answer general health-related questions using AI
+
+### Context Management Tools:
+- **set_patient_context** - Set default patient for subsequent operations
+- **set_practitioner_context** - Set default practitioner for subsequent operations
+- **get_context** - View current context settings
+- **clear_context** - Clear all context settings
 
 ## Prerequisites
 
@@ -74,6 +81,13 @@ Example initialization:
 ```json
 {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "natural_language_query", "arguments": {"query": "Find all patients named John"}}, "id": 1}
 {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "natural_language_query", "arguments": {"query": "Get medical history for patient ID abc123"}}, "id": 2}
+```
+
+### Medical Guidelines Examples
+```json
+{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "get_medical_guidelines", "arguments": {"query": "What is the recommended dosing for metformin in type 2 diabetes?"}}, "id": 1}
+{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "get_medical_guidelines", "arguments": {"query": "Current hypertension treatment guidelines for adults"}}, "id": 2}
+{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "get_medical_guidelines", "arguments": {"query": "Warfarin INR monitoring protocol"}}, "id": 3}
 ```
 
 ### Environment Variables
