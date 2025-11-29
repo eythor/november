@@ -1,6 +1,6 @@
 <template>
   <div
-    class="w-full sm:w-1/2 wrap-break-word px-4 py-2 rounded-lg shadow-sm relative"
+    class="w-[90%] sm:w-[75%] md:w-[45%] wrap-break-word px-4 py-2 rounded-lg shadow-sm relative"
     :class="
       msg.role === 'user'
         ? 'bg-blue-600 text-white rounded-br-none'
@@ -38,8 +38,10 @@
             v-if="msg.audioData"
             :audio-data="msg.audioData"
             :is-playing="isPlaying"
-            :current-time="audioCurrentTime"
-            :duration="audioDuration"
+            @play="$emit('play', msg)"
+            @pause="$emit('pause', msg)"
+            @timeupdate="$emit('timeupdate', $event)"
+            @duration="$emit('duration', $event)"
           />
         </div>
       </div>
@@ -47,7 +49,7 @@
       <!-- Duration and toggle text button -->
       <div class="flex items-center gap-2">
         <span class="text-xs text-slate-500 dark:text-slate-400">
-          {{ msg.duration ? msg.duration + "s" : "Audio message" }}
+          {{ msg.duration && isFinite(msg.duration) && msg.duration > 0 ? msg.duration + "s" : "Audio message" }}
         </span>
         <!-- Toggle text button -->
         <button
@@ -85,11 +87,15 @@ import AudioWaveform from "./AudioWaveform.vue";
 const props = defineProps<{
   msg: Message;
   isPlaying: boolean;
-  audioCurrentTime: number;
-  audioDuration: number;
 }>();
 
-const emit = defineEmits(["toggle-play"]);
+const emit = defineEmits<{
+  "toggle-play": [msg: Message];
+  "play": [msg: Message];
+  "pause": [msg: Message];
+  "timeupdate": [time: number];
+  "duration": [duration: number];
+}>();
 
 // Text visibility state - collapsed by default for audio messages
 const showText = ref(false);

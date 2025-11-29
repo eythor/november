@@ -10,9 +10,10 @@
       :scroll-el="scrollEl"
       :is-playing="isPlaying"
       :toggle-play="togglePlay"
-      :audio-current-time="playingMsgId ? audioCurrentTime : 0"
-      :audio-duration="playingMsgId ? audioDuration : 0"
-      :playing-msg-id="playingMsgId"
+      :handle-play="handlePlay"
+      :handle-pause="handlePause"
+      :handle-time-update="handleTimeUpdate"
+      :handle-duration="handleDuration"
     />
     <Footer
       @onVoiceRecorded="onVoiceRecorded"
@@ -49,142 +50,55 @@ function pushLocalMessage(payload: Partial<Message>) {
 }
 
 
-const currentAudio = ref<HTMLAudioElement | null>(null);
+// Simple state: just track which message is playing
 const playingMsgId = ref<string | null>(null);
-const isAudioPlaying = ref(false);
-const audioCurrentTime = ref(0);
-const audioDuration = ref(0);
 
+// Simple toggle - wavesurfer handles the actual play/pause
 function togglePlay(msg: Message) {
-  console.log('togglePlay called for message:', msg.id, 'hasAudioData:', !!msg.audioData);
-
-  // Stop current audio if playing something else
-  if (currentAudio.value && playingMsgId.value !== msg.id) {
-    currentAudio.value.pause();
-    currentAudio.value.currentTime = 0;
-    currentAudio.value = null;
-    playingMsgId.value = null;
-    isAudioPlaying.value = false;
-    audioCurrentTime.value = 0;
-    audioDuration.value = 0;
-  }
-
-  // If no audio or switching, create new
-  if (!currentAudio.value || playingMsgId.value !== msg.id) {
-    // Check if message has audio data stored
-    const audioData = msg.audioData;
-    if (!audioData) {
-      console.warn('No audio data found for message:', msg.id, msg);
-      return;
-    }
-
-    console.log('Creating audio element with data URL length:', audioData.length);
-    console.log('Data URL prefix:', audioData.substring(0, 50));
-
-    // Create new audio element
-    const audio = new Audio(audioData);
-
-    // Set up event handlers
-    audio.onloadedmetadata = () => {
-      console.log('Audio metadata loaded, duration:', audio.duration, 'readyState:', audio.readyState);
-      audioDuration.value = audio.duration;
-    };
-
-    audio.oncanplay = () => {
-      console.log('Audio can play, readyState:', audio.readyState);
-    };
-
-    audio.onplay = () => {
-      console.log('Audio started playing');
-      isAudioPlaying.value = true;
-    };
-
-    audio.onpause = () => {
-      console.log('Audio paused, currentTime:', audio.currentTime);
-      isAudioPlaying.value = false;
-      audioCurrentTime.value = audio.currentTime;
-      if (audio.currentTime === 0 || audio.ended) {
-        playingMsgId.value = null;
-        currentAudio.value = null;
-        isAudioPlaying.value = false;
-        audioCurrentTime.value = 0;
-        audioDuration.value = 0;
-      }
-    };
-
-    audio.onended = () => {
-      console.log('Audio ended');
-      playingMsgId.value = null;
-      currentAudio.value = null;
-      isAudioPlaying.value = false;
-      audioCurrentTime.value = 0;
-      audioDuration.value = 0;
-    };
-
-    // Track currentTime for waveform sync
-    audio.ontimeupdate = () => {
-      if (audio === currentAudio.value) {
-        audioCurrentTime.value = audio.currentTime;
-      }
-    };
-
-    audio.onerror = (e) => {
-      console.error('Audio playback error:', e, 'error code:', audio.error?.code, 'error message:', audio.error?.message);
-      console.error('Audio element state:', {
-        src: audio.src.substring(0, 100),
-        readyState: audio.readyState,
-        networkState: audio.networkState
-      });
-      playingMsgId.value = null;
-      currentAudio.value = null;
-      isAudioPlaying.value = false;
-    };
-
-    audio.onloadeddata = () => {
-      console.log('Audio data loaded, duration:', audio.duration, 'readyState:', audio.readyState);
-    };
-
-    currentAudio.value = audio;
-    playingMsgId.value = msg.id;
-    isAudioPlaying.value = false;
-
-    // Play the audio
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise
-        .then(() => {
-          console.log('Audio playing successfully');
-        })
-        .catch((error) => {
-          console.error('Error playing audio:', error);
-          console.error('Audio element:', {
-            src: audio.src.substring(0, 100),
-            readyState: audio.readyState,
-            paused: audio.paused,
-            error: audio.error
-          });
-          playingMsgId.value = null;
-          currentAudio.value = null;
-          isAudioPlaying.value = false;
-        });
-    }
+  // If clicking the same message, toggle play/pause
+  if (playingMsgId.value === msg.id) {
+    playingMsgId.value = null; // This will trigger pause via isPlaying prop
   } else {
-    // toggle play/pause for current audio
-    if (currentAudio.value) {
-      if (currentAudio.value.paused) {
-        currentAudio.value.play().catch((error) => {
-          console.error('Error resuming audio:', error);
-          isAudioPlaying.value = false;
-        });
-      } else {
-        currentAudio.value.pause();
-      }
+    // If clicking a different message, stop current and start new one
+    if (playingMsgId.value) {
+      playingMsgId.value = null; // Stop current
     }
+    playingMsgId.value = msg.id; // Start new one (AudioWaveform will play via isPlaying prop)
   }
 }
 
 function isPlaying(msg: Message) {
-  return playingMsgId.value === msg.id && isAudioPlaying.value;
+  return playingMsgId.value === msg.id;
+}
+
+// Simple handlers - wavesurfer does all the work
+function handlePlay(msg: Message) {
+  // Stop any other playing message
+  if (playingMsgId.value && playingMsgId.value !== msg.id) {
+    playingMsgId.value = null;
+  }
+  playingMsgId.value = msg.id;
+}
+
+function handlePause(msg: Message) {
+  if (playingMsgId.value === msg.id) {
+    playingMsgId.value = null;
+  }
+}
+
+function handleTimeUpdate(msg: Message, time: number) {
+  // Can store time if needed, but wavesurfer handles visualization
+  // No action needed - wavesurfer updates its own UI
+}
+
+function handleDuration(msg: Message, duration: number) {
+  // Only update if duration is a valid finite number
+  if (isFinite(duration) && duration > 0) {
+    const roundedDuration = Math.floor(duration);
+    if (msg.duration !== roundedDuration) {
+      store.patchMessage(msg.id, { duration: roundedDuration });
+    }
+  }
 }
 
 // --- user sends voice ---
@@ -202,11 +116,23 @@ async function onVoiceRecorded(file: File) {
   const duration = await new Promise<number>((resolve) => {
     const audio = new Audio(audioData);
     audio.onloadedmetadata = () => {
-      resolve(audio.duration);
+      const dur = audio.duration;
+      // Ensure duration is finite and valid
+      if (isFinite(dur) && dur > 0) {
+        resolve(dur);
+      } else {
+        resolve(Math.floor(Math.random() * 5) + 3); // fallback to fake duration
+      }
     };
     audio.onerror = () => {
       resolve(Math.floor(Math.random() * 5) + 3); // fallback to fake duration
     };
+    // Timeout fallback in case metadata never loads
+    setTimeout(() => {
+      if (!isFinite(audio.duration) || audio.duration <= 0) {
+        resolve(Math.floor(Math.random() * 5) + 3);
+      }
+    }, 2000);
   });
 
   const id = pushLocalMessage({
@@ -255,11 +181,15 @@ async function onVoiceRecorded(file: File) {
 
         // Auto-play audio if it's an audio message
         if (response.reply.type === 'audio' && audioData) {
+          // Wait for the component to mount and wavesurfer to be ready
           nextTick(() => {
-            const newMessage = store.messages.find(m => m.id === typingMessageId);
-            if (newMessage) {
-              togglePlay(newMessage);
-            }
+            setTimeout(() => {
+              const newMessage = store.messages.find(m => m.id === typingMessageId);
+              if (newMessage) {
+                // Set playing state - AudioWaveform will handle the actual playback
+                playingMsgId.value = newMessage.id;
+              }
+            }, 300); // Small delay to ensure wavesurfer is initialized
           });
         }
       } else {

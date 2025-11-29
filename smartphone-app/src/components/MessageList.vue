@@ -9,10 +9,11 @@
       <MessageBubble
         :msg="msg"
         :is-playing="isPlaying(msg)"
-        :audio-current-time="playingMsgId === msg.id ? audioCurrentTime : 0"
-        :audio-duration="playingMsgId === msg.id ? audioDuration : 0"
         @toggle-play="togglePlay"
-        @focus-composer="focusComposer"
+        @play="(m) => handlePlay(m)"
+        @pause="(m) => handlePause(m)"
+        @timeupdate="(time) => handleTimeUpdate(msg, time)"
+        @duration="(duration) => handleDuration(msg, duration)"
       />
     </div>
   </main>
@@ -28,8 +29,9 @@ const props = defineProps<{
   scrollEl: HTMLElement | null;
   isPlaying: (msg: Message) => boolean;
   togglePlay: (msg: Message) => void;
-  audioCurrentTime: number;
-  audioDuration: number;
-  playingMsgId: string | null;
+  handlePlay: (msg: Message) => void;
+  handlePause: (msg: Message) => void;
+  handleTimeUpdate: (msg: Message, time: number) => void;
+  handleDuration: (msg: Message, duration: number) => void;
 }>();
 </script>
