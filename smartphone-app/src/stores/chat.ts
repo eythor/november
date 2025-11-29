@@ -10,6 +10,7 @@ export interface Message {
   type: MsgType;
   text?: string;
   duration?: number; // for fake audio messages
+  audioData?: string; // data URL for audio playback
   createdAt: number;
   sentAt?: number;
   delivered?: boolean;
@@ -25,6 +26,7 @@ export const useChatStore = defineStore("chat", () => {
       type: msg.type ?? "text",
       text: msg.text,
       duration: msg.duration,
+      audioData: msg.audioData,
       createdAt: msg.createdAt ?? Date.now(),
       sentAt: msg.sentAt,
       delivered: msg.delivered ?? false,

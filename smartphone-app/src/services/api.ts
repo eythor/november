@@ -2,7 +2,23 @@ import type { Message } from '../stores/chat';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
 
-export async function sendChatMessage(message: Message): Promise<void> {
+export interface ChatResponse {
+  message: string;
+  received?: {
+    id: string;
+    role: string;
+    type: string;
+    text?: string;
+    createdAt: number;
+  };
+  reply?: {
+    type?: string;
+    text?: string;
+    duration?: number;
+  };
+}
+
+export async function sendChatMessage(message: Message): Promise<ChatResponse> {
   try {
     const response = await fetch(`${API_BASE_URL}/chat`, {
       method: 'POST',
@@ -22,15 +38,29 @@ export async function sendChatMessage(message: Message): Promise<void> {
       throw new Error(`Failed to send message: ${response.statusText}`);
     }
 
-    // For now, we don't need to do anything with the response
-    await response.json();
+    const data = await response.json() as ChatResponse;
+    return data;
   } catch (error) {
     console.error('Error sending chat message:', error);
     throw error;
   }
 }
 
-export async function sendAudioMessage(audioFile: File, message: Message): Promise<void> {
+export interface AudioResponse {
+  message: string;
+  filename?: string;
+  mimetype?: string;
+  size?: number;
+  reply?: {
+    type?: string;
+    text?: string;
+    duration?: number;
+    audio?: string; // base64 encoded audio
+    audioMimetype?: string; // MIME type of the audio
+  };
+}
+
+export async function sendAudioMessage(audioFile: File, _message: Message): Promise<AudioResponse> {
   try {
     const formData = new FormData();
     formData.append('audio', audioFile);
@@ -44,8 +74,8 @@ export async function sendAudioMessage(audioFile: File, message: Message): Promi
       throw new Error(`Failed to send audio: ${response.statusText}`);
     }
 
-    // For now, we don't need to do anything with the response
-    await response.json();
+    const data = await response.json() as AudioResponse;
+    return data;
   } catch (error) {
     console.error('Error sending audio message:', error);
     throw error;

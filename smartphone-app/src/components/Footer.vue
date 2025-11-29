@@ -30,20 +30,25 @@ const props = defineProps<{
   draft: string;
   canSend: boolean;
 }>();
-const emit = defineEmits(["update:draft", "sendText", "onVoiceRecorded", "onEnter"]);
+const emit = defineEmits<{
+  "update:draft": [value: string];
+  "sendText": [];
+  "onVoiceRecorded": [file: File];
+  "onEnter": [];
+}>();
 
-const composer = ref(null);
+const composer = ref<HTMLTextAreaElement | null>(null);
 
 const draftProxy = computed({
   get: () => props.draft,
   set: (val) => emit("update:draft", val),
 });
 
-function onEnter(e) {
+function onEnter(e: KeyboardEvent) {
   if (e.shiftKey) return;
-  emit("onEnter", e);
+  emit("onEnter");
 }
-function onVoiceRecorded(file) {
+function onVoiceRecorded(file: File) {
   emit("onVoiceRecorded", file);
 }
 function sendText() {
