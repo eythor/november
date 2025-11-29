@@ -91,6 +91,11 @@ func CheckPatientExists(db *sql.DB, id string) (bool, error) {
 	return exists, err
 }
 
+func UpdatePatientBirthDate(db *sql.DB, patientID, birthDate string) error {
+	_, err := db.Exec("UPDATE patients SET birth_date = ? WHERE id = ?", birthDate, patientID)
+	return err
+}
+
 func CheckPractitionerExists(db *sql.DB, id string) (bool, error) {
 	var exists bool
 	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM practitioners WHERE id = ?)", id).Scan(&exists)

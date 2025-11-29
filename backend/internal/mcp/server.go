@@ -324,6 +324,24 @@ func (s *Server) handleToolsList() map[string]interface{} {
 				"required": []string{},
 			},
 		},
+		{
+			"name":        "update_patient_birth_date",
+			"description": "Update a patient's birth date in the database. Uses patient context if patient_id is not provided.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"patient_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Patient ID (optional if patient context is set)",
+					},
+					"birth_date": map[string]interface{}{
+						"type":        "string",
+						"description": "Birth date in YYYY-MM-DD format (ISO 8601)",
+					},
+				},
+				"required": []string{"birth_date"},
+			},
+		},
 	}
 
 	return map[string]interface{}{
@@ -470,6 +488,16 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 			return nil, err
 		}
 		return s.handler.CalculateAge(args.PatientID)
+
+	case "update_patient_birth_date":
+		var args struct {
+			PatientID string `json:"patient_id"`
+			BirthDate string `json:"birth_date"`
+		}
+		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+			return nil, err
+		}
+		return s.handler.UpdatePatientBirthDate(args.PatientID, args.BirthDate)
 
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", toolCall.Name)

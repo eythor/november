@@ -425,6 +425,60 @@ func (h *Handler) CalculateAge(patientID string) (interface{}, error) {
 	}, nil
 }
 
+func (h *Handler) UpdatePatientBirthDate(patientID, birthDate string) (interface{}, error) {
+	// Use context if patient ID not provided
+	patientID = h.GetContextPatientID(patientID)
+
+	if patientID == "" {
+		return nil, fmt.Errorf("patient ID is required (no patient ID provided and none set in context)")
+	}
+
+	if birthDate == "" {
+		return nil, fmt.Errorf("birth date is required")
+	}
+
+	// Verify patient exists
+	exists, err := database.CheckPatientExists(h.db, patientID)
+	if err != nil {
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("patient not found: %s", patientID)
+	}
+
+	// Update birth date
+	err = database.UpdatePatientBirthDate(h.db, patientID, birthDate)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update birth date: %w", err)
+	}
+
+	// Get updated patient info
+	patient, err := database.GetPatientByID(h.db, patientID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve updated patient: %w", err)
+	}
+
+	name := strings.TrimSpace(patient.GivenName + " " + patient.FamilyName)
+	if name == "" || name == " " {
+		name = patientID
+	}
+
+	age, err := calculateAge(birthDate)
+	ageText := ""
+	if err == nil {
+		ageText = fmt.Sprintf("\nAge: %d years", age)
+	}
+
+	return map[string]interface{}{
+		"content": []map[string]interface{}{
+			{
+				"type": "text",
+				"text": fmt.Sprintf("✓ Birth date updated for patient %s (ID: %s)\nBirth Date: %s%s", name, patientID, birthDate, ageText),
+			},
+		},
+	}, nil
+}
+
 func (h *Handler) AddObservation(patientID, code, display, category, status, effectiveDateTime string, valueQuantity *float64, valueUnit, valueString *string) (interface{}, error) {
 	// Use context if patient ID not provided
 	patientID = h.GetContextPatientID(patientID)
@@ -1109,6 +1163,37 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 		{
 			"type": "function",
 			"function": map[string]interface{}{
+				"name": "update_patient_birth_date",
+				"description": "Update a patient's birth date in the database" + func() string {
+					if hasPatientContext {
+						return " (uses default patient if not specified)"
+					}
+					return ""
+				}(),
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"patient_id": map[string]interface{}{
+							"type": "string",
+							"description": "Patient ID" + func() string {
+								if hasPatientContext {
+									return " (optional, uses context if not provided)"
+								}
+								return ""
+							}(),
+						},
+						"birth_date": map[string]interface{}{
+							"type":        "string",
+							"description": "Birth date in YYYY-MM-DD format (ISO 8601)",
+						},
+					},
+					"required": []string{"birth_date"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]interface{}{
 				"name":        "get_medical_guidelines",
 				"description": "Get comprehensive medical guidelines, dosages, treatment protocols, and clinical best practices",
 				"parameters": map[string]interface{}{
@@ -1418,6 +1503,21 @@ func (h *Handler) executeTool(toolName, argumentsJSON string, defaultPractitione
 		}
 		return h.ExtractTextFromMCPResult(result), nil
 
+	case "update_patient_birth_date":
+		patientID := ""
+		if pid, exists := args["patient_id"].(string); exists {
+			patientID = pid
+		}
+		birthDate, ok := args["birth_date"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid birth_date parameter")
+		}
+		result, err := h.UpdatePatientBirthDate(patientID, birthDate)
+		if err != nil {
+			return "", err
+		}
+		return h.ExtractTextFromMCPResult(result), nil
+
 	case "get_medical_guidelines":
 		query, ok := args["query"].(string)
 		if !ok {
@@ -1502,12 +1602,15 @@ func formatPatientInfo(p database.Patient) string {
 	}
 
 	// Always show birth date prominently if available, and calculate age
+	// Explicitly state when birth date is not available so LLM knows it's missing
 	if p.BirthDate != "" {
 		info.WriteString(fmt.Sprintf("Birth Date: %s\n", p.BirthDate))
 		age, err := calculateAge(p.BirthDate)
 		if err == nil {
 			info.WriteString(fmt.Sprintf("Age: %d years\n", age))
 		}
+	} else {
+		info.WriteString(fmt.Sprintf("Birth Date: Not available\n"))
 	}
 
 	if p.Gender != "" && p.Gender != "unknown" {
