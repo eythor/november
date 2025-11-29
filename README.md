@@ -11,3 +11,5 @@ The project explores digital health innovation using synthetic FHIR clinical dat
 - **data/**: Additional datasets or resources (if present).
 
 See each subproject's README for technical details and setup.
+
+To inspect the demo data, download [this example database](https://drive.google.com/file/d/1Qe5xsy0VTOGGOLZa8SykeiHGATrisWqi/view?usp=sharing) and open it locally with [a sqlite viewer](https://inloop.github.io/sqlite-viewer/).
