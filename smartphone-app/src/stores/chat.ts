@@ -14,6 +14,7 @@ export interface Message {
   createdAt: number;
   sentAt?: number;
   delivered?: boolean;
+  isTyping?: boolean; // for typing indicator
 }
 
 export const useChatStore = defineStore("chat", () => {
@@ -30,6 +31,7 @@ export const useChatStore = defineStore("chat", () => {
       createdAt: msg.createdAt ?? Date.now(),
       sentAt: msg.sentAt,
       delivered: msg.delivered ?? false,
+      isTyping: msg.isTyping ?? false,
     };
     messages.value.push(m);
     // Return the index for patching
@@ -44,4 +46,6 @@ export const useChatStore = defineStore("chat", () => {
   }
 
   return { messages, addMessage, patchMessage };
+}, {
+  persist: true,
 });

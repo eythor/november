@@ -2,11 +2,17 @@
   <div
     class="h-screen flex flex-col bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
   >
+    <header class="flex items-center justify-center py-4 px-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+      <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">VoiceMed</h1>
+    </header>
     <MessageList
       :messages="messages"
       :scroll-el="scrollEl"
       :is-playing="isPlaying"
       :toggle-play="togglePlay"
+      :audio-current-time="playingMsgId ? audioCurrentTime : 0"
+      :audio-duration="playingMsgId ? audioDuration : 0"
+      :playing-msg-id="playingMsgId"
     />
     <Footer
       @onVoiceRecorded="onVoiceRecorded"
@@ -46,6 +52,8 @@ function pushLocalMessage(payload: Partial<Message>) {
 const currentAudio = ref<HTMLAudioElement | null>(null);
 const playingMsgId = ref<string | null>(null);
 const isAudioPlaying = ref(false);
+const audioCurrentTime = ref(0);
+const audioDuration = ref(0);
 
 function togglePlay(msg: Message) {
   console.log('togglePlay called for message:', msg.id, 'hasAudioData:', !!msg.audioData);
@@ -57,6 +65,8 @@ function togglePlay(msg: Message) {
     currentAudio.value = null;
     playingMsgId.value = null;
     isAudioPlaying.value = false;
+    audioCurrentTime.value = 0;
+    audioDuration.value = 0;
   }
 
   // If no audio or switching, create new
@@ -77,6 +87,7 @@ function togglePlay(msg: Message) {
     // Set up event handlers
     audio.onloadedmetadata = () => {
       console.log('Audio metadata loaded, duration:', audio.duration, 'readyState:', audio.readyState);
+      audioDuration.value = audio.duration;
     };
 
     audio.oncanplay = () => {
@@ -91,10 +102,13 @@ function togglePlay(msg: Message) {
     audio.onpause = () => {
       console.log('Audio paused, currentTime:', audio.currentTime);
       isAudioPlaying.value = false;
+      audioCurrentTime.value = audio.currentTime;
       if (audio.currentTime === 0 || audio.ended) {
         playingMsgId.value = null;
         currentAudio.value = null;
         isAudioPlaying.value = false;
+        audioCurrentTime.value = 0;
+        audioDuration.value = 0;
       }
     };
 
@@ -103,6 +117,15 @@ function togglePlay(msg: Message) {
       playingMsgId.value = null;
       currentAudio.value = null;
       isAudioPlaying.value = false;
+      audioCurrentTime.value = 0;
+      audioDuration.value = 0;
+    };
+
+    // Track currentTime for waveform sync
+    audio.ontimeupdate = () => {
+      if (audio === currentAudio.value) {
+        audioCurrentTime.value = audio.currentTime;
+      }
     };
 
     audio.onerror = (e) => {
@@ -167,11 +190,43 @@ function isPlaying(msg: Message) {
 // --- user sends voice ---
 
 async function onVoiceRecorded(file: File) {
-  const duration = Math.floor(Math.random() * 5) + 3; // fake duration for user audio
-  const id = pushLocalMessage({ role: "user", type: "audio", duration });
+  // Convert file to data URL for visualization
+  const audioData = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  // Get actual duration from the audio file
+  const duration = await new Promise<number>((resolve) => {
+    const audio = new Audio(audioData);
+    audio.onloadedmetadata = () => {
+      resolve(audio.duration);
+    };
+    audio.onerror = () => {
+      resolve(Math.floor(Math.random() * 5) + 3); // fallback to fake duration
+    };
+  });
+
+  const id = pushLocalMessage({
+    role: "user",
+    type: "audio",
+    duration: Math.floor(duration),
+    audioData: audioData
+  });
   const message = store.messages.find(m => m.id === id);
 
   if (message) {
+    // Immediately add a typing indicator message
+    const typingMessageId = pushLocalMessage({
+      role: "assistant",
+      type: "text",
+      text: "",
+      isTyping: true,
+      createdAt: Date.now(),
+    });
+
     try {
       const response = await sendAudioMessage(file, message);
       store.patchMessage(id, { delivered: true, sentAt: Date.now() });
@@ -189,30 +244,40 @@ async function onVoiceRecorded(file: File) {
           duration: response.reply.duration
         });
 
-        const messageId = pushLocalMessage({
-          role: "assistant",
+        // Update the typing message with the actual response
+        store.patchMessage(typingMessageId, {
           type: (response.reply.type || "text") as "text" | "audio",
           text: response.reply.text,
           duration: response.reply.duration,
           audioData: audioData,
-          createdAt: Date.now(),
+          isTyping: false,
         });
 
         // Auto-play audio if it's an audio message
         if (response.reply.type === 'audio' && audioData) {
           nextTick(() => {
-            const newMessage = store.messages.find(m => m.id === messageId);
+            const newMessage = store.messages.find(m => m.id === typingMessageId);
             if (newMessage) {
               togglePlay(newMessage);
             }
           });
         }
+      } else {
+        // If no reply, remove the typing indicator
+        store.patchMessage(typingMessageId, {
+          isTyping: false,
+          text: "No response received",
+        });
       }
 
       nextTick(scrollToBottom);
     } catch (error) {
       console.error('Failed to send audio message:', error);
-      // Optionally mark as failed or retry
+      // Update typing message to show error
+      store.patchMessage(typingMessageId, {
+        isTyping: false,
+        text: "Sorry, I encountered an error processing your message.",
+      });
     }
   }
 }
