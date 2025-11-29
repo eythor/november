@@ -43,8 +43,8 @@ extract_entity() {
     local record_count=$(wc -l < "$entity_file")
     echo "  Records: $record_count"
     
-    # Extract data
-    jq -r -f "$jq_file" "$entity_file" | jq -r '@csv' > "$output_file"
+    # Extract data - process each NDJSON line and convert object values to CSV, one per line
+    jq -r -f "$jq_file" "$entity_file" | jq -rs '.[] | [to_entries[] | .value] | @csv' > "$output_file"
     
     local extracted_count=$(wc -l < "$output_file")
     echo "  Extracted: $extracted_count records to $output_file"

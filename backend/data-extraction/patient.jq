@@ -22,4 +22,5 @@
   birth_place: (.extension[] | select(.url == "http://hl7.org/fhir/StructureDefinition/patient-birthPlace") | "\(.valueAddress.city), \(.valueAddress.state)"),
   mothers_maiden_name: (.extension[] | select(.url == "http://hl7.org/fhir/StructureDefinition/patient-mothersMaidenName") | .valueString),
   language: (.communication[0].language.coding[0].code // null),
+  raw_json: (. | tostring)
 }

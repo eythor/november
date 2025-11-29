@@ -9,9 +9,9 @@
   criticality: (.criticality // null),
   code: (.code.coding[0].code // null),
   display: (.code.coding[0].display // null),
-  patient_id: (.patient.reference | split("/")[1]),
-  encounter_id: (.encounter.reference | split("/")[1] // null),
+  patient_id: (if .patient.reference then .patient.reference | split("/")[1] else null end),
+  encounter_id: (if .encounter.reference then .encounter.reference | split("/")[1] else null end),
   recorded_date: (.recordedDate // null),
-  recorder_id: (.recorder.reference | split("/")[1] // null),
+  recorder_id: (if .recorder.reference then .recorder.reference | split("/")[1] else null end),
   raw_json: (. | tostring)
 }
