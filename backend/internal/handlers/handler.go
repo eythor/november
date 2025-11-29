@@ -336,6 +336,30 @@ func (h *Handler) GetMedicalHistory(patientID, category string) (interface{}, er
 				result.WriteString("\n")
 			}
 		}
+		if category == "allergies" {
+			break
+		}
+		fallthrough
+		
+	case "observations":
+		if category == "observations" || category == "all" {
+			observations, err := database.GetObservationsByPatientID(h.db, patientID)
+			if err == nil && len(observations) > 0 {
+				result.WriteString("OBSERVATIONS:\n")
+				for _, o := range observations {
+					result.WriteString(fmt.Sprintf("• %s\n", o.Display))
+					result.WriteString(fmt.Sprintf("  Category: %s\n", o.Category))
+					result.WriteString(fmt.Sprintf("  Date: %s\n", o.EffectiveDateTime))
+					if o.ValueQuantity != nil && o.ValueUnit != nil {
+						result.WriteString(fmt.Sprintf("  Value: %.2f %s\n", *o.ValueQuantity, *o.ValueUnit))
+					} else if o.ValueString != nil {
+						result.WriteString(fmt.Sprintf("  Value: %s\n", *o.ValueString))
+					}
+					result.WriteString(fmt.Sprintf("  Status: %s\n", o.Status))
+				}
+				result.WriteString("\n")
+			}
+		}
 	}
 	
 	return map[string]interface{}{
@@ -600,8 +624,8 @@ func (h *Handler) callOpenRouterWithTools(query string) (string, error) {
 						},
 						"category": map[string]interface{}{
 							"type": "string",
-							"description": "Category of history (conditions, medications, procedures, immunizations, allergies, all)",
-							"enum": []string{"conditions", "medications", "procedures", "immunizations", "allergies", "all"},
+							"description": "Category of history (conditions, medications, procedures, immunizations, allergies, observations, all)",
+							"enum": []string{"conditions", "medications", "procedures", "immunizations", "allergies", "observations", "all"},
 						},
 					},
 					"required": historyRequired,

@@ -233,3 +233,30 @@ func SearchMedicationByName(db *sql.DB, medicationName string) (*Medication, err
 	
 	return &medication, nil
 }
+
+func GetObservationsByPatientID(db *sql.DB, patientID string) ([]Observation, error) {
+	rows, err := db.Query(`
+		SELECT id, status, category, code, display, patient_id, 
+		       effective_datetime, value_quantity, value_unit, value_string
+		FROM observations
+		WHERE patient_id = ?
+		ORDER BY effective_datetime DESC
+	`, patientID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var observations []Observation
+	for rows.Next() {
+		var o Observation
+		err := rows.Scan(&o.ID, &o.Status, &o.Category, &o.Code, &o.Display, 
+			&o.PatientID, &o.EffectiveDateTime, &o.ValueQuantity, 
+			&o.ValueUnit, &o.ValueString)
+		if err != nil {
+			continue
+		}
+		observations = append(observations, o)
+	}
+	return observations, nil
+}

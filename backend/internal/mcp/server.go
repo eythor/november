@@ -215,8 +215,8 @@ func (s *Server) handleToolsList() map[string]interface{} {
 					},
 					"category": map[string]interface{}{
 						"type":        "string",
-						"description": "Category of history (conditions, medications, procedures, immunizations, allergies)",
-						"enum":        []string{"conditions", "medications", "procedures", "immunizations", "allergies", "all"},
+						"description": "Category of history (conditions, medications, procedures, immunizations, allergies, observations)",
+						"enum":        []string{"conditions", "medications", "procedures", "immunizations", "allergies", "observations", "all"},
 					},
 				},
 				"required": []string{"patient_id"},

@@ -83,3 +83,16 @@ type AllergyIntolerance struct {
 	PatientID       string  `json:"patient_id"`
 	Criticality     *string `json:"criticality,omitempty"`
 }
+
+type Observation struct {
+	ID                string  `json:"id"`
+	Status            string  `json:"status"`
+	Category          string  `json:"category"`
+	Code              string  `json:"code"`
+	Display           string  `json:"display"`
+	PatientID         string  `json:"patient_id"`
+	EffectiveDateTime string  `json:"effective_datetime"`
+	ValueQuantity     *float64 `json:"value_quantity,omitempty"`
+	ValueUnit         *string  `json:"value_unit,omitempty"`
+	ValueString       *string  `json:"value_string,omitempty"`
+}
