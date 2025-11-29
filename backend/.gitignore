@@ -53,3 +53,5 @@ result-*
 *.ids
 *.db
 *.csv
+cmd/
+mcp-http-server
