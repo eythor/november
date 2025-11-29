@@ -29,7 +29,7 @@ func (h *Handler) SetPatientContext(patientID string) (interface{}, error) {
 		"content": []map[string]interface{}{
 			{
 				"type": "text",
-				"text": fmt.Sprintf("Context updated: Default patient set to %s %s (ID: %s)",
+				"text": fmt.Sprintf("Context updated: Current patient set to %s %s (ID: %s)",
 					patient.GivenName, patient.FamilyName, patientID),
 			},
 		},
@@ -52,7 +52,7 @@ func (h *Handler) SetPractitionerContext(practitionerID string) (interface{}, er
 		"content": []map[string]interface{}{
 			{
 				"type": "text",
-				"text": fmt.Sprintf("Context updated: Default practitioner set to ID: %s", practitionerID),
+				"text": fmt.Sprintf("Context updated: Current practitioner set to ID: %s", practitionerID),
 			},
 		},
 	}, nil
@@ -65,11 +65,11 @@ func (h *Handler) GetContext() (interface{}, error) {
 	h.mu.RUnlock()
 
 	message := "Current context:\n"
-	
+
 	if ctx.PatientID != "" {
 		patient, err := database.GetPatientByID(h.db, ctx.PatientID)
 		if err == nil {
-			message += fmt.Sprintf("• Patient: %s %s (ID: %s)\n", 
+			message += fmt.Sprintf("• Patient: %s %s (ID: %s)\n",
 				patient.GivenName, patient.FamilyName, ctx.PatientID)
 		} else {
 			message += fmt.Sprintf("• Patient ID: %s\n", ctx.PatientID)
@@ -104,7 +104,7 @@ func (h *Handler) ClearContext() (interface{}, error) {
 		"content": []map[string]interface{}{
 			{
 				"type": "text",
-				"text": "Context cleared. No default patient or practitioner set.",
+				"text": "Context cleared. No current patient or practitioner set.",
 			},
 		},
 	}, nil
@@ -115,7 +115,7 @@ func (h *Handler) GetContextPatientID(providedID string) string {
 	if providedID != "" {
 		return providedID
 	}
-	
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.context.PatientID
@@ -126,7 +126,7 @@ func (h *Handler) GetContextPractitionerID(providedID string) string {
 	if providedID != "" {
 		return providedID
 	}
-	
+
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.context.PractitionerID
@@ -136,20 +136,20 @@ func (h *Handler) GetContextPractitionerID(providedID string) string {
 func (h *Handler) GetContextInfo() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	
+
 	// Always include current timestamp
 	currentTime := time.Now().Format(time.RFC3339)
 	info := fmt.Sprintf("\n\nCurrent date and time: %s", currentTime)
-	
+
 	if h.context.PatientID != "" || h.context.PractitionerID != "" {
 		info += "\n\nCurrent context:"
 		if h.context.PatientID != "" {
-			info += fmt.Sprintf("\n- Default Patient ID: %s", h.context.PatientID)
+			info += fmt.Sprintf("\n- Current Patient ID: %s", h.context.PatientID)
 		}
 		if h.context.PractitionerID != "" {
-			info += fmt.Sprintf("\n- Default Practitioner ID: %s", h.context.PractitionerID)
+			info += fmt.Sprintf("\n- Current Practitioner ID: %s", h.context.PractitionerID)
 		}
 	}
-	
+
 	return info
 }

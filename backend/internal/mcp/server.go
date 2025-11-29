@@ -107,7 +107,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 		},
 		{
 			"name":        "set_patient_context",
-			"description": "Set the default patient ID for subsequent operations",
+			"description": "Set the current patient ID for subsequent operations",
 			"inputSchema": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -121,7 +121,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 		},
 		{
 			"name":        "set_practitioner_context",
-			"description": "Set the default practitioner ID for subsequent operations",
+			"description": "Set the current practitioner ID for subsequent operations",
 			"inputSchema": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -135,7 +135,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 		},
 		{
 			"name":        "get_context",
-			"description": "Get the current context (default patient and practitioner)",
+			"description": "Get the current context (current patient and practitioner)",
 			"inputSchema": map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},
@@ -143,7 +143,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 		},
 		{
 			"name":        "clear_context",
-			"description": "Clear the current context (remove default patient and practitioner)",
+			"description": "Clear the current context (remove current patient and practitioner)",
 			"inputSchema": map[string]interface{}{
 				"type":       "object",
 				"properties": map[string]interface{}{},
@@ -240,7 +240,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "get_medical_guidelines",
 			"description": "Get comprehensive medical guidelines, medication dosages, treatment protocols, and clinical best practices",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type": "object",
 				"properties": map[string]interface{}{
 					"query": map[string]interface{}{
 						"type":        "string",

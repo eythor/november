@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -46,7 +48,7 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 		h.mu.Unlock()
 
 		resultText := formatPatientInfo(*patient)
-		resultText += fmt.Sprintf("\n\n✓ Context updated: Default patient set to %s %s (ID: %s)",
+		resultText += fmt.Sprintf("\n\n✓ Context updated: Current patient set to %s %s (ID: %s)",
 			patient.GivenName, patient.FamilyName, patient.ID)
 
 		return map[string]interface{}{
@@ -60,8 +62,12 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 	}
 
 	// If error is not "no rows", it's a real database error
-	if err != nil && err != sql.ErrNoRows {
-		return nil, fmt.Errorf("database query failed: %w", err)
+	// Use errors.Is to check for wrapped sql.ErrNoRows
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("database query failed: %w", err)
+		}
+		// err is sql.ErrNoRows, continue to name search
 	}
 
 	// Patient not found by ID, try name search
@@ -71,6 +77,8 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 	}
 
 	if len(patients) == 0 {
+		// Debug: Log the query that failed (remove in production)
+		log.Printf("DEBUG: SearchPatientsByName returned 0 results for query: '%s'", query)
 		return map[string]interface{}{
 			"content": []map[string]interface{}{
 				{
@@ -89,7 +97,7 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 		h.mu.Unlock()
 
 		resultText := formatPatientInfo(p)
-		resultText += fmt.Sprintf("\n\n✓ Context updated: Default patient set to %s %s (ID: %s)",
+		resultText += fmt.Sprintf("\n\n✓ Context updated: Current patient set to %s %s (ID: %s)",
 			p.GivenName, p.FamilyName, p.ID)
 
 		return map[string]interface{}{
@@ -109,7 +117,7 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 		result.WriteString(formatPatientInfo(p))
 		result.WriteString("\n---\n")
 	}
-	result.WriteString("\nNote: Multiple patients found. Use 'set_patient_context' with a specific patient ID to set the default.")
+	result.WriteString("\nNote: Multiple patients found. Use 'set_patient_context' with a specific patient ID to set the Current.")
 
 	return map[string]interface{}{
 		"content": []map[string]interface{}{
@@ -1052,7 +1060,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 			"type": "function",
 			"function": map[string]interface{}{
 				"name":        "set_patient_context",
-				"description": "Set the default patient for subsequent operations",
+				"description": "Set the current patient for subsequent operations",
 				"parameters": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1069,7 +1077,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 			"type": "function",
 			"function": map[string]interface{}{
 				"name":        "set_practitioner_context",
-				"description": "Set the default practitioner for subsequent operations",
+				"description": "Set the current practitioner for subsequent operations",
 				"parameters": map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -1086,7 +1094,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 			"type": "function",
 			"function": map[string]interface{}{
 				"name":        "get_context",
-				"description": "Get the current default patient and practitioner",
+				"description": "Get the current current patient and practitioner",
 				"parameters": map[string]interface{}{
 					"type":       "object",
 					"properties": map[string]interface{}{},
@@ -1116,7 +1124,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 				"name": "get_medical_history",
 				"description": "Retrieve patient medical history" + func() string {
 					if hasPatientContext {
-						return " (uses default patient if not specified)"
+						return " (uses current patient if not specified)"
 					}
 					return ""
 				}(),
@@ -1221,7 +1229,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 				"name": "add_observation",
 				"description": "Add an observation record for a patient (e.g., vital signs, lab results, measurements)" + func() string {
 					if hasPatientContext {
-						return " (uses default patient if not specified)"
+						return " (uses current patient if not specified)"
 					}
 					return ""
 				}(),
@@ -1280,7 +1288,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 				"name": "calculate_age",
 				"description": "Calculate the age of a patient from their birth date. Returns the patient's current age in years based on their birth date stored in the database." + func() string {
 					if hasPatientContext {
-						return " (uses default patient if not specified)"
+						return " (uses current patient if not specified)"
 					}
 					return ""
 				}(),
@@ -1307,7 +1315,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 				"name": "update_patient_birth_date",
 				"description": "Update a patient's birth date in the database" + func() string {
 					if hasPatientContext {
-						return " (uses default patient if not specified)"
+						return " (uses current patient if not specified)"
 					}
 					return ""
 				}(),
@@ -1355,7 +1363,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 				"name": "determine_apixaban_dose",
 				"description": "Determine whether to give half or full dose of Apixaban based on patient criteria. Half dose is recommended if 2 out of 3 conditions are met: age ≥80 years, body weight ≤60 kg, or serum creatinine ≥1.5 mg/dL." + func() string {
 					if hasPatientContext {
-						return " (uses default patient if not specified)"
+						return " (uses current patient if not specified)"
 					}
 					return ""
 				}(),
@@ -1549,11 +1557,15 @@ func (h *Handler) executeTool(toolName, argumentsJSON string, defaultPractitione
 		if !ok {
 			return "", fmt.Errorf("invalid query parameter")
 		}
+		log.Printf("DEBUG: lookup_patient called with query: '%s'", query)
 		result, err := h.LookupPatient(query)
 		if err != nil {
+			log.Printf("DEBUG: lookup_patient error: %v", err)
 			return "", err
 		}
-		return h.ExtractTextFromMCPResult(result), nil
+		textResult := h.ExtractTextFromMCPResult(result)
+		log.Printf("DEBUG: lookup_patient result: '%s'", textResult)
+		return textResult, nil
 
 	case "get_medical_history":
 		patientID := ""

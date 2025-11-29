@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 func GetPatientByID(db *sql.DB, id string) (*Patient, error) {
@@ -40,12 +41,100 @@ func GetPatientByID(db *sql.DB, id string) (*Patient, error) {
 }
 
 func SearchPatientsByName(db *sql.DB, query string) ([]Patient, error) {
-	searchQuery := "%" + query + "%"
+	query = strings.TrimSpace(query)
+	
+	// Extract potential name from common patterns like "patient named X", "find X", etc.
+	// Common prefixes/suffixes that indicate a name follows
+	namePatterns := []string{
+		"patient named ",
+		"patient ",
+		"find ",
+		"lookup ",
+		"search for ",
+		"named ",
+		"with name ",
+		"called ",
+	}
+	
+	// Try to extract just the name part
+	extractedName := query
+	for _, pattern := range namePatterns {
+		if strings.HasPrefix(strings.ToLower(query), strings.ToLower(pattern)) {
+			extractedName = strings.TrimSpace(query[len(pattern):])
+			break
+		}
+		if idx := strings.Index(strings.ToLower(query), strings.ToLower(" "+pattern)); idx != -1 {
+			extractedName = strings.TrimSpace(query[idx+len(pattern):])
+			break
+		}
+	}
+	
+	// Extract individual words from the extracted name (or original query if no pattern matched)
+	// Filter out common non-name words
+	commonWords := map[string]bool{
+		"patient": true, "patients": true, "find": true, "search": true,
+		"named": true, "called": true, "with": true, "for": true, "the": true,
+		"a": true, "an": true, "lookup": true, "look": true, "up": true,
+	}
+	
+	words := strings.Fields(extractedName)
+	var wordQueries []string
+	for _, word := range words {
+		word = strings.TrimSpace(word)
+		wordLower := strings.ToLower(word)
+		// Only use words longer than 2 characters that aren't common words
+		if len(word) > 2 && !commonWords[wordLower] {
+			wordQueries = append(wordQueries, "%"+word+"%")
+		}
+	}
+	
+	// Also search for the extracted name as a whole if it's different from the original query
+	var searchQueries []string
+	if extractedName != query && len(extractedName) > 0 {
+		searchQueries = append(searchQueries, "%"+extractedName+"%")
+	}
+	// Always search for the original query too (in case no pattern matched)
+	searchQueries = append(searchQueries, "%"+query+"%")
+	
+	// Build the WHERE clause - search ONLY in given_name, family_name, and full name
+	// We only check substrings of these name fields, nothing else
+	// Ensure we have at least one search term
+	if len(searchQueries) == 0 && len(wordQueries) == 0 {
+		// Fallback: search for the original query if nothing was extracted
+		searchQueries = []string{"%" + query + "%"}
+	}
+	
+	whereClause := `WHERE (`
+	args := []interface{}{}
+	
+	// Add searches for extracted name phrases
+	for _, searchQuery := range searchQueries {
+		if len(args) > 0 {
+			whereClause += ` OR `
+		}
+		whereClause += `(LOWER(COALESCE(given_name, '')) LIKE LOWER(?) 
+		   OR LOWER(COALESCE(family_name, '')) LIKE LOWER(?) 
+		   OR LOWER(COALESCE(given_name, '') || ' ' || COALESCE(family_name, '')) LIKE LOWER(?))`
+		args = append(args, searchQuery, searchQuery, searchQuery)
+	}
+	
+	// Add individual word searches (these are the actual name parts)
+	for _, wordQuery := range wordQueries {
+		if len(args) > 0 {
+			whereClause += ` OR `
+		}
+		whereClause += `(LOWER(COALESCE(given_name, '')) LIKE LOWER(?)
+		   OR LOWER(COALESCE(family_name, '')) LIKE LOWER(?)
+		   OR LOWER(COALESCE(given_name, '') || ' ' || COALESCE(family_name, '')) LIKE LOWER(?))`
+		args = append(args, wordQuery, wordQuery, wordQuery)
+	}
+	
+	whereClause += `)`
+	
 	rows, err := db.Query(`
 		SELECT id, given_name, family_name, gender, birth_date, phone, city, state
 		FROM patients
-		WHERE given_name LIKE ? OR family_name LIKE ? OR (given_name || ' ' || family_name) LIKE ?
-	`, searchQuery, searchQuery, searchQuery)
+		`+whereClause, args...)
 
 	if err != nil {
 		return nil, fmt.Errorf("database query failed: %w", err)
@@ -93,6 +182,11 @@ func CheckPatientExists(db *sql.DB, id string) (bool, error) {
 
 func UpdatePatientBirthDate(db *sql.DB, patientID, birthDate string) error {
 	_, err := db.Exec("UPDATE patients SET birth_date = ? WHERE id = ?", birthDate, patientID)
+	return err
+}
+
+func UpdatePatientName(db *sql.DB, patientID, givenName, familyName string) error {
+	_, err := db.Exec("UPDATE patients SET given_name = ?, family_name = ? WHERE id = ?", givenName, familyName, patientID)
 	return err
 }
 
