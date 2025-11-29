@@ -3,15 +3,23 @@ package database
 import (
 	"database/sql"
 	"fmt"
-	
+	"time"
+
 	_ "github.com/mattn/go-sqlite3"
 )
 
 func InitDB(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	// Use _busy_timeout and _journal_mode for better SQLite concurrency handling
+	db, err := sql.Open("sqlite3", dbPath+"?_busy_timeout=5000&_journal_mode=WAL")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// SQLite works best with a single connection for writes
+	// Set max open connections to 1 to avoid "database is locked" errors
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(time.Hour)
 
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
@@ -43,12 +51,12 @@ type Encounter struct {
 }
 
 type Condition struct {
-	ID              string  `json:"id"`
-	ClinicalStatus  string  `json:"clinical_status"`
-	Code            string  `json:"code"`
-	Display         string  `json:"display"`
-	PatientID       string  `json:"patient_id"`
-	OnsetDateTime   *string `json:"onset_datetime,omitempty"`
+	ID             string  `json:"id"`
+	ClinicalStatus string  `json:"clinical_status"`
+	Code           string  `json:"code"`
+	Display        string  `json:"display"`
+	PatientID      string  `json:"patient_id"`
+	OnsetDateTime  *string `json:"onset_datetime,omitempty"`
 }
 
 type MedicationRequest struct {
@@ -69,30 +77,45 @@ type Procedure struct {
 }
 
 type Immunization struct {
-	ID              string `json:"id"`
-	Status          string `json:"status"`
-	VaccineDisplay  string `json:"vaccine_display"`
-	PatientID       string `json:"patient_id"`
+	ID                 string `json:"id"`
+	Status             string `json:"status"`
+	VaccineDisplay     string `json:"vaccine_display"`
+	PatientID          string `json:"patient_id"`
 	OccurrenceDateTime string `json:"occurrence_datetime"`
 }
 
 type AllergyIntolerance struct {
-	ID              string  `json:"id"`
-	ClinicalStatus  string  `json:"clinical_status"`
-	Display         string  `json:"display"`
-	PatientID       string  `json:"patient_id"`
-	Criticality     *string `json:"criticality,omitempty"`
+	ID             string  `json:"id"`
+	ClinicalStatus string  `json:"clinical_status"`
+	Display        string  `json:"display"`
+	PatientID      string  `json:"patient_id"`
+	Criticality    *string `json:"criticality,omitempty"`
 }
 
 type Observation struct {
-	ID                string  `json:"id"`
-	Status            string  `json:"status"`
-	Category          string  `json:"category"`
-	Code              string  `json:"code"`
-	Display           string  `json:"display"`
-	PatientID         string  `json:"patient_id"`
-	EffectiveDateTime string  `json:"effective_datetime"`
-	ValueQuantity     *float64 `json:"value_quantity,omitempty"`
-	ValueUnit         *string  `json:"value_unit,omitempty"`
-	ValueString       *string  `json:"value_string,omitempty"`
+	ID               string  `json:"id"`
+	Status           string  `json:"status"`
+	Category         string  `json:"category"`
+	Code             string  `json:"code"`
+	Display          string  `json:"display"`
+	PatientID        string  `json:"patient_id"`
+	EffectiveDateTime *string `json:"effective_datetime,omitempty"`
+	ValueQuantity    *float64 `json:"value_quantity,omitempty"`
+	ValueUnit        *string  `json:"value_unit,omitempty"`
+	ValueString      *string  `json:"value_string,omitempty"`
+}
+
+type Claim struct {
+	ID                  string   `json:"id"`
+	Status              string   `json:"status"`
+	Type                *string  `json:"type,omitempty"`
+	Use                 *string  `json:"use,omitempty"`
+	PatientID           string   `json:"patient_id"`
+	ProviderID          *string  `json:"provider_id,omitempty"`
+	Priority            *string  `json:"priority,omitempty"`
+	CreatedDateTime     *string  `json:"created_datetime,omitempty"`
+	BillablePeriodStart *string  `json:"billable_period_start,omitempty"`
+	BillablePeriodEnd   *string  `json:"billable_period_end,omitempty"`
+	TotalAmount         *float64 `json:"total_amount,omitempty"`
+	Currency            *string  `json:"currency,omitempty"`
 }

@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/eythor/mcp-server/internal/database"
 )
 
@@ -135,16 +137,18 @@ func (h *Handler) GetContextInfo() string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	
-	if h.context.PatientID == "" && h.context.PractitionerID == "" {
-		return ""
-	}
+	// Always include current timestamp
+	currentTime := time.Now().Format(time.RFC3339)
+	info := fmt.Sprintf("\n\nCurrent date and time: %s", currentTime)
 	
-	info := "\n\nCurrent context:"
-	if h.context.PatientID != "" {
-		info += fmt.Sprintf("\n- Default Patient ID: %s", h.context.PatientID)
-	}
-	if h.context.PractitionerID != "" {
-		info += fmt.Sprintf("\n- Default Practitioner ID: %s", h.context.PractitionerID)
+	if h.context.PatientID != "" || h.context.PractitionerID != "" {
+		info += "\n\nCurrent context:"
+		if h.context.PatientID != "" {
+			info += fmt.Sprintf("\n- Default Patient ID: %s", h.context.PatientID)
+		}
+		if h.context.PractitionerID != "" {
+			info += fmt.Sprintf("\n- Default Practitioner ID: %s", h.context.PractitionerID)
+		}
 	}
 	
 	return info

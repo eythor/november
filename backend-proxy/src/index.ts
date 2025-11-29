@@ -105,7 +105,7 @@ app.post(
       console.log(`Transcription: ${excerpt}`);
 
       // Send transcription to Go backend for processing
-      let responseText = transcription; // Fallback to transcription if backend fails
+      let responseText: string;
       try {
         const practitionerId = req.body.practitionerId;
         if (!practitionerId) {
@@ -140,26 +140,33 @@ app.post(
             responseText = backendData.response;
             console.log("Backend response received");
           } else {
-            console.warn(
-              'Backend response missing "response" field, using transcription'
-            );
+            console.error('Backend response missing "response" field');
+            return res.status(500).json({
+              error: "Backend returned invalid response format",
+              transcription: transcription,
+            });
           }
         } else {
           const errorData = (await backendResponse
             .json()
             .catch(() => ({}))) as { error?: string };
-          console.warn(
-            `Backend returned ${backendResponse.status}: ${
-              errorData.error || "Unknown error"
-            }`
+          const errorMessage = errorData.error || "Unknown error";
+          console.error(
+            `Backend returned ${backendResponse.status}: ${errorMessage}`
           );
-          console.warn("Using transcription as fallback");
+          return res.status(502).json({
+            error: `Backend server error: ${errorMessage}`,
+            transcription: transcription,
+          });
         }
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : "Unknown error";
         console.error(`Failed to connect to backend: ${errorMessage}`);
-        console.warn("Using transcription as fallback");
+        return res.status(503).json({
+          error: `Backend server is unavailable: ${errorMessage}. Please ensure the Go server is running.`,
+          transcription: transcription,
+        });
       }
 
       // Strip markdown formatting and special characters for TTS

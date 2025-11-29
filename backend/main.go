@@ -9,9 +9,13 @@ import (
 	"github.com/eythor/mcp-server/internal/database"
 	"github.com/eythor/mcp-server/internal/handlers"
 	"github.com/eythor/mcp-server/internal/mcp"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	// Load .env file (ignore error if file doesn't exist)
+	_ = godotenv.Load()
+
 	dbPath := os.Getenv("DATABASE_PATH")
 	if dbPath == "" {
 		dbPath = "./database.db"

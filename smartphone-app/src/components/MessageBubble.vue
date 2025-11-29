@@ -1,10 +1,10 @@
 <template>
   <div
-    class="w-[90%] sm:w-[75%] md:w-[45%] wrap-break-word px-4 py-2 rounded-lg shadow-sm relative"
+    class="w-[90%] sm:w-[75%] md:w-[45%] wrap-break-word px-4 py-2 rounded-2xl shadow-sm relative message-bubble"
     :class="
       msg.role === 'user'
-        ? 'bg-blue-600 text-white rounded-br-none'
-        : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-bl-none'
+        ? 'bg-blue-600 text-white user-message rounded-br-sm'
+        : 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 assistant-message rounded-bl-sm'
     "
   >
     <!-- Text message -->
@@ -49,7 +49,11 @@
       <!-- Duration and toggle text button -->
       <div class="flex items-center gap-2">
         <span class="text-xs text-slate-500 dark:text-slate-400">
-          {{ msg.duration && isFinite(msg.duration) && msg.duration > 0 ? msg.duration + "s" : "Audio message" }}
+          {{
+            msg.duration && isFinite(msg.duration) && msg.duration > 0
+              ? msg.duration + "s"
+              : "Audio message"
+          }}
         </span>
         <!-- Toggle text button -->
         <button
@@ -62,7 +66,10 @@
       </div>
 
       <!-- Collapsible text (transcription) -->
-      <div v-if="msg.text && showText" class="text-sm opacity-90 mt-1 p-2 bg-gray-50 dark:bg-slate-700/50 rounded border border-gray-200 dark:border-slate-600">
+      <div
+        v-if="msg.text && showText"
+        class="text-sm opacity-90 mt-1 p-2 bg-gray-50 dark:bg-slate-700/50 rounded border border-gray-200 dark:border-slate-600"
+      >
         {{ msg.text }}
       </div>
     </div>
@@ -91,10 +98,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   "toggle-play": [msg: Message];
-  "play": [msg: Message];
-  "pause": [msg: Message];
-  "timeupdate": [time: number];
-  "duration": [duration: number];
+  play: [msg: Message];
+  pause: [msg: Message];
+  timeupdate: [time: number];
+  duration: [duration: number];
 }>();
 
 // Text visibility state - collapsed by default for audio messages
@@ -114,17 +121,16 @@ function formatTime(msg: Message) {
   display: inline-block;
   animation: typing 1.4s infinite;
 }
-
 .typing-dot:nth-child(2) {
   animation-delay: 0.2s;
 }
-
 .typing-dot:nth-child(3) {
   animation-delay: 0.4s;
 }
-
 @keyframes typing {
-  0%, 60%, 100% {
+  0%,
+  60%,
+  100% {
     opacity: 0.4;
     transform: translateY(0);
   }
@@ -132,5 +138,31 @@ function formatTime(msg: Message) {
     opacity: 1;
     transform: translateY(-6px);
   }
+}
+/* User message bubble tail - right side, modern style */
+.user-message::after {
+  content: "";
+  position: absolute;
+  right: -14px;
+  bottom: 12px;
+  width: 18px;
+  height: 22px;
+  background: inherit;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  z-index: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.04));
+}
+/* Assistant message bubble tail - left side, modern style */
+.assistant-message::after {
+  content: "";
+  position: absolute;
+  left: -14px;
+  bottom: 12px;
+  width: 18px;
+  height: 22px;
+  background: inherit;
+  clip-path: polygon(100% 0, 0 50%, 100% 100%);
+  z-index: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.04));
 }
 </style>

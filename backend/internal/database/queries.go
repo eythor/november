@@ -7,18 +7,35 @@ import (
 
 func GetPatientByID(db *sql.DB, id string) (*Patient, error) {
 	var patient Patient
+	var birthDate, phone, city, state sql.NullString
+
 	err := db.QueryRow(`
 		SELECT id, given_name, family_name, gender, birth_date, phone, city, state
 		FROM patients
 		WHERE id = ?
 	`, id).Scan(
 		&patient.ID, &patient.GivenName, &patient.FamilyName,
-		&patient.Gender, &patient.BirthDate, &patient.Phone,
-		&patient.City, &patient.State,
+		&patient.Gender, &birthDate, &phone,
+		&city, &state,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to query patient with ID %s: %w", id, err)
 	}
+
+	// Handle NULL values properly
+	if birthDate.Valid {
+		patient.BirthDate = birthDate.String
+	}
+	if phone.Valid {
+		patient.Phone = &phone.String
+	}
+	if city.Valid {
+		patient.City = &city.String
+	}
+	if state.Valid {
+		patient.State = &state.String
+	}
+
 	return &patient, nil
 }
 
@@ -29,26 +46,42 @@ func SearchPatientsByName(db *sql.DB, query string) ([]Patient, error) {
 		FROM patients
 		WHERE given_name LIKE ? OR family_name LIKE ? OR (given_name || ' ' || family_name) LIKE ?
 	`, searchQuery, searchQuery, searchQuery)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("database query failed: %w", err)
 	}
 	defer rows.Close()
-	
+
 	var patients []Patient
 	for rows.Next() {
 		var p Patient
+		var birthDate, phone, city, state sql.NullString
 		err := rows.Scan(
 			&p.ID, &p.GivenName, &p.FamilyName,
-			&p.Gender, &p.BirthDate, &p.Phone,
-			&p.City, &p.State,
+			&p.Gender, &birthDate, &phone,
+			&city, &state,
 		)
 		if err != nil {
 			continue
 		}
+
+		// Handle NULL values properly
+		if birthDate.Valid {
+			p.BirthDate = birthDate.String
+		}
+		if phone.Valid {
+			p.Phone = &phone.String
+		}
+		if city.Valid {
+			p.City = &city.String
+		}
+		if state.Valid {
+			p.State = &state.String
+		}
+
 		patients = append(patients, p)
 	}
-	
+
 	return patients, nil
 }
 
@@ -103,7 +136,7 @@ func GetConditionsByPatientID(db *sql.DB, patientID string) ([]Condition, error)
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var conditions []Condition
 	for rows.Next() {
 		var c Condition
@@ -127,7 +160,7 @@ func GetMedicationsByPatientID(db *sql.DB, patientID string) ([]MedicationReques
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var medications []MedicationRequest
 	for rows.Next() {
 		var m MedicationRequest
@@ -151,7 +184,7 @@ func GetProceduresByPatientID(db *sql.DB, patientID string) ([]Procedure, error)
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var procedures []Procedure
 	for rows.Next() {
 		var p Procedure
@@ -175,7 +208,7 @@ func GetImmunizationsByPatientID(db *sql.DB, patientID string) ([]Immunization, 
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var immunizations []Immunization
 	for rows.Next() {
 		var i Immunization
@@ -198,7 +231,7 @@ func GetAllergiesByPatientID(db *sql.DB, patientID string) ([]AllergyIntolerance
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var allergies []AllergyIntolerance
 	for rows.Next() {
 		var a AllergyIntolerance
@@ -219,18 +252,18 @@ type Medication struct {
 
 func SearchMedicationByName(db *sql.DB, medicationName string) (*Medication, error) {
 	var medication Medication
-	
+
 	err := db.QueryRow(`
 		SELECT code, display, form
 		FROM medications
 		WHERE display LIKE ?
 		LIMIT 1
 	`, "%"+medicationName+"%").Scan(&medication.Code, &medication.Display, &medication.Form)
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &medication, nil
 }
 
@@ -246,12 +279,12 @@ func GetObservationsByPatientID(db *sql.DB, patientID string) ([]Observation, er
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var observations []Observation
 	for rows.Next() {
 		var o Observation
-		err := rows.Scan(&o.ID, &o.Status, &o.Category, &o.Code, &o.Display, 
-			&o.PatientID, &o.EffectiveDateTime, &o.ValueQuantity, 
+		err := rows.Scan(&o.ID, &o.Status, &o.Category, &o.Code, &o.Display,
+			&o.PatientID, &o.EffectiveDateTime, &o.ValueQuantity,
 			&o.ValueUnit, &o.ValueString)
 		if err != nil {
 			continue
@@ -259,4 +292,16 @@ func GetObservationsByPatientID(db *sql.DB, patientID string) ([]Observation, er
 		observations = append(observations, o)
 	}
 	return observations, nil
+}
+
+func CreateObservation(db *sql.DB, observation *Observation) error {
+	_, err := db.Exec(`
+		INSERT INTO observations (
+			id, resource_type, status, category, code, display,
+			patient_id, effective_datetime, value_quantity, value_unit, value_string
+		) VALUES (?, 'Observation', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, observation.ID, observation.Status, observation.Category, observation.Code,
+		observation.Display, observation.PatientID, observation.EffectiveDateTime,
+		observation.ValueQuantity, observation.ValueUnit, observation.ValueString)
+	return err
 }

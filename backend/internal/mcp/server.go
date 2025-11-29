@@ -95,7 +95,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "natural_language_query",
 			"description": "Process natural language queries using AI with access to all healthcare tools",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type": "object",
 				"properties": map[string]interface{}{
 					"query": map[string]interface{}{
 						"type":        "string",
@@ -109,7 +109,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "set_patient_context",
 			"description": "Set the default patient ID for subsequent operations",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type": "object",
 				"properties": map[string]interface{}{
 					"patient_id": map[string]interface{}{
 						"type":        "string",
@@ -123,7 +123,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "set_practitioner_context",
 			"description": "Set the default practitioner ID for subsequent operations",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type": "object",
 				"properties": map[string]interface{}{
 					"practitioner_id": map[string]interface{}{
 						"type":        "string",
@@ -137,7 +137,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "get_context",
 			"description": "Get the current context (default patient and practitioner)",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type":       "object",
 				"properties": map[string]interface{}{},
 			},
 		},
@@ -145,15 +145,15 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "clear_context",
 			"description": "Clear the current context (remove default patient and practitioner)",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type":       "object",
 				"properties": map[string]interface{}{},
 			},
 		},
 		{
 			"name":        "lookup_patient",
-			"description": "Look up a patient by name or ID",
+			"description": "Look up a patient by name or ID. Returns patient information including: name, patient ID, gender, birth_date (date of birth), age (calculated automatically), phone number, and location. Birth date and age are always included when available in the patient record.",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type": "object",
 				"properties": map[string]interface{}{
 					"query": map[string]interface{}{
 						"type":        "string",
@@ -167,7 +167,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "schedule_appointment",
 			"description": "Schedule an appointment for a patient",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type": "object",
 				"properties": map[string]interface{}{
 					"patient_id": map[string]interface{}{
 						"type":        "string",
@@ -193,7 +193,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "cancel_appointment",
 			"description": "Cancel an appointment",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type": "object",
 				"properties": map[string]interface{}{
 					"encounter_id": map[string]interface{}{
 						"type":        "string",
@@ -207,7 +207,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "get_medical_history",
 			"description": "Retrieve patient medical history",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type": "object",
 				"properties": map[string]interface{}{
 					"patient_id": map[string]interface{}{
 						"type":        "string",
@@ -226,7 +226,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "get_medication_info",
 			"description": "Provide medication information",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type": "object",
 				"properties": map[string]interface{}{
 					"medication_name": map[string]interface{}{
 						"type":        "string",
@@ -254,7 +254,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			"name":        "answer_health_question",
 			"description": "Answer general health-related questions using AI",
 			"inputSchema": map[string]interface{}{
-				"type":     "object",
+				"type": "object",
 				"properties": map[string]interface{}{
 					"question": map[string]interface{}{
 						"type":        "string",
@@ -262,6 +262,66 @@ func (s *Server) handleToolsList() map[string]interface{} {
 					},
 				},
 				"required": []string{"question"},
+			},
+		},
+		{
+			"name":        "add_observation",
+			"description": "Add an observation record for a patient (e.g., vital signs, lab results, measurements)",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"patient_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Patient ID (optional if patient context is set)",
+					},
+					"code": map[string]interface{}{
+						"type":        "string",
+						"description": "Observation code (e.g., LOINC code)",
+					},
+					"display": map[string]interface{}{
+						"type":        "string",
+						"description": "Human-readable name of the observation (e.g., 'Body Weight', 'Blood Pressure')",
+					},
+					"category": map[string]interface{}{
+						"type":        "string",
+						"description": "Category of observation (e.g., 'vital-signs', 'laboratory', 'exam')",
+					},
+					"status": map[string]interface{}{
+						"type":        "string",
+						"description": "Status of the observation (default: 'final')",
+					},
+					"effective_datetime": map[string]interface{}{
+						"type":        "string",
+						"description": "Date and time when observation was made (ISO 8601 format, defaults to now)",
+					},
+					"value_quantity": map[string]interface{}{
+						"type":        "number",
+						"description": "Numeric value of the observation (if applicable)",
+					},
+					"value_unit": map[string]interface{}{
+						"type":        "string",
+						"description": "Unit of measurement (e.g., 'kg', 'mmHg', 'mg/dL')",
+					},
+					"value_string": map[string]interface{}{
+						"type":        "string",
+						"description": "String value of the observation (if not numeric)",
+					},
+				},
+				"required": []string{"code", "display"},
+			},
+		},
+		{
+			"name":        "calculate_age",
+			"description": "Calculate the age of a patient from their birth date. Returns the patient's current age in years based on their birth date stored in the database. Uses patient context if patient_id is not provided.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"patient_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Patient ID (optional if patient context is set)",
+					},
+				},
+				"required": []string{},
 			},
 		},
 	}
@@ -289,7 +349,7 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
 			return nil, err
 		}
-		return s.handler.ProcessNaturalLanguageQuery(args.Query)
+		return s.handler.ProcessNaturalLanguageQuery(args.Query, "")
 
 	case "set_patient_context":
 		var args struct {
@@ -326,9 +386,9 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 
 	case "schedule_appointment":
 		var args struct {
-			PatientID       string `json:"patient_id"`
-			PractitionerID  string `json:"practitioner_id"`
-			DateTime        string `json:"datetime"`
+			PatientID      string `json:"patient_id"`
+			PractitionerID string `json:"practitioner_id"`
+			DateTime       string `json:"datetime"`
 			Type           string `json:"type"`
 		}
 		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
@@ -384,6 +444,32 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 			return nil, err
 		}
 		return s.handler.AnswerHealthQuestion(args.Question)
+
+	case "add_observation":
+		var args struct {
+			PatientID         string   `json:"patient_id"`
+			Code              string   `json:"code"`
+			Display           string   `json:"display"`
+			Category          string   `json:"category"`
+			Status            string   `json:"status"`
+			EffectiveDateTime string   `json:"effective_datetime"`
+			ValueQuantity     *float64 `json:"value_quantity"`
+			ValueUnit         *string  `json:"value_unit"`
+			ValueString       *string  `json:"value_string"`
+		}
+		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+			return nil, err
+		}
+		return s.handler.AddObservation(args.PatientID, args.Code, args.Display, args.Category, args.Status, args.EffectiveDateTime, args.ValueQuantity, args.ValueUnit, args.ValueString)
+
+	case "calculate_age":
+		var args struct {
+			PatientID string `json:"patient_id"`
+		}
+		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+			return nil, err
+		}
+		return s.handler.CalculateAge(args.PatientID)
 
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", toolCall.Name)
