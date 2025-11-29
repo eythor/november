@@ -33,6 +33,7 @@ type Context struct {
 	PatientID      string                `json:"patient_id,omitempty"`
 	PractitionerID string                `json:"practitioner_id,omitempty"`
 	PatientSummary *PatientMedicalSummary `json:"patient_summary,omitempty"`
+	LastResponse   string                `json:"last_response,omitempty"`
 }
 
 type Handler struct {
@@ -65,6 +66,7 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 		h.mu.Lock()
 		h.context.PatientID = patient.ID
 		h.context.PatientSummary = medicalSummary
+		h.context.LastResponse = "" // Clear last response when changing patient
 		h.mu.Unlock()
 
 		resultText := formatPatientInfo(*patient)
@@ -121,6 +123,7 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 		h.mu.Lock()
 		h.context.PatientID = p.ID
 		h.context.PatientSummary = medicalSummary
+		h.context.LastResponse = "" // Clear last response when changing patient
 		h.mu.Unlock()
 
 		resultText := formatPatientInfo(p)
@@ -1445,7 +1448,11 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 	}
 
 	// return log.Printf("Sending request to google/gemini-2.5-flash")
-	return h.executeToolLoop(reqBody, query, practitionerID)
+	response, err := h.executeToolLoop(reqBody, query, practitionerID)
+	if err == nil && response != "" {
+		h.SetLastResponse(response)
+	}
+	return response, err
 }
 
 func (h *Handler) executeToolLoop(reqBody map[string]interface{}, originalQuery string, practitionerID string) (string, error) {

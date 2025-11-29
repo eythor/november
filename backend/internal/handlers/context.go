@@ -192,9 +192,10 @@ func (h *Handler) SetPatientContext(patientID string) (interface{}, error) {
 	h.mu.Lock()
 	h.context.PatientID = patientID
 	h.context.PatientSummary = medicalSummary
+	h.context.LastResponse = "" // Clear last response when changing patient
 	h.mu.Unlock()
 	
-	debug.Log("Patient context set: %s %s (ID: %s), medical summary loaded: %v",
+	debug.Log("Patient context set: %s %s (ID: %s), medical summary loaded: %v, last response cleared",
 		patient.GivenName, patient.FamilyName, patientID, medicalSummary != nil)
 
 	return map[string]interface{}{
@@ -284,7 +285,7 @@ func (h *Handler) ClearContext() (interface{}, error) {
 	h.context = Context{}
 	h.mu.Unlock()
 	
-	debug.Log("Context cleared, including patient medical summary")
+	debug.Log("Context cleared, including patient medical summary and last response")
 
 	return map[string]interface{}{
 		"content": []map[string]interface{}{
@@ -318,6 +319,14 @@ func (h *Handler) GetContextPractitionerID(providedID string) string {
 	return h.context.PractitionerID
 }
 
+// SetLastResponse updates the last response in context
+func (h *Handler) SetLastResponse(response string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.context.LastResponse = response
+	debug.Verbose("Last response updated in context (length: %d)", len(response))
+}
+
 // GetContextInfo returns formatted context information for inclusion in prompts
 func (h *Handler) GetContextInfo() string {
 	h.mu.RLock()
@@ -326,6 +335,17 @@ func (h *Handler) GetContextInfo() string {
 	// Always include current timestamp
 	currentTime := time.Now().Format(time.RFC3339)
 	info := fmt.Sprintf("\n\nCurrent date and time: %s", currentTime)
+	
+	// Include last response if available (for conversation continuity)
+	if h.context.LastResponse != "" {
+		info += "\n\n**Previous Response:**"
+		// Truncate if too long to avoid context bloat
+		if len(h.context.LastResponse) > 500 {
+			info += fmt.Sprintf("\n%s... (truncated)", h.context.LastResponse[:500])
+		} else {
+			info += fmt.Sprintf("\n%s", h.context.LastResponse)
+		}
+	}
 
 	if h.context.PatientID != "" || h.context.PractitionerID != "" {
 		info += "\n\nCurrent context:"
