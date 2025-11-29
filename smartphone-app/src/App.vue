@@ -92,11 +92,15 @@ function handleTimeUpdate(msg: Message, time: number) {
 
 function handleDuration(msg: Message, duration: number) {
   // Only update if duration is a valid finite number
-  if (isFinite(duration) && duration > 0) {
+  // Reject unreasonably large durations (e.g., 999 fallback values)
+  if (isFinite(duration) && duration > 0 && duration < 600) {
     const roundedDuration = Math.floor(duration);
     if (msg.duration !== roundedDuration) {
       store.patchMessage(msg.id, { duration: roundedDuration });
     }
+  } else if (duration >= 600) {
+    // If duration is suspiciously large, log warning but don't update
+    console.warn(`Suspicious audio duration detected: ${duration}s, ignoring update`);
   }
 }
 
@@ -134,22 +138,31 @@ async function onVoiceRecorded(file: File) {
       reject(new Error("Failed to load audio metadata"));
     };
 
-    // Timeout fallback - if metadata doesn't load, proceed anyway (assume valid)
+    // Increased timeout for short audio files - they may take longer to load metadata
     setTimeout(() => {
       if (!resolved) {
         resolved = true;
-        // If we can't get duration, proceed anyway (assume it's valid)
-        resolve(999); // Large value so it passes the check
+        // Try to get duration one more time before giving up
+        const dur = audio.duration;
+        if (isFinite(dur) && dur > 0) {
+          resolve(dur);
+        } else {
+          // If we still can't get duration, reject and let AudioWaveform handle it
+          reject(new Error("Timeout waiting for audio metadata"));
+        }
       }
-    }, 3000);
-  }).catch(() => {
-    // If we can't determine duration, proceed anyway (assume it's valid)
-    console.warn("Could not determine audio duration, proceeding anyway");
-    return 999; // Large value so it passes the check
+    }, 5000); // Increased from 3000ms to 5000ms
+  }).catch((error) => {
+    // If we can't determine duration, log warning but proceed
+    // AudioWaveform will emit the correct duration when it loads
+    console.warn("Could not determine audio duration initially:", error);
+    // Return undefined to indicate duration is unknown - AudioWaveform will update it
+    return undefined;
   });
 
   // Discard audio shorter than 2 seconds (only reject short snippets)
-  if (duration < 2.0) {
+  // If duration is undefined, we'll let AudioWaveform determine it and check later
+  if (duration !== undefined && duration < 2.0) {
     console.log(`Audio too short (${duration.toFixed(2)}s), discarding`);
     return;
   }
@@ -157,7 +170,7 @@ async function onVoiceRecorded(file: File) {
   const id = pushLocalMessage({
     role: "user",
     type: "audio",
-    duration: Math.floor(duration),
+    duration: duration !== undefined ? Math.floor(duration) : undefined,
     audioData: audioData,
   });
   const message = store.messages.find((m) => m.id === id);
