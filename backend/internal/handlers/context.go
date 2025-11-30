@@ -402,7 +402,23 @@ func (h *Handler) GetContextInfo() string {
 			}
 		}
 		if h.context.PractitionerID != "" {
-			info += fmt.Sprintf("\n- Current Practitioner ID: %s", h.context.PractitionerID)
+			// Fetch practitioner details to include name and relevant info
+			practitioner, err := database.GetPractitionerByID(h.db, h.context.PractitionerID)
+			if err == nil {
+				info += "\n\n**Practitioner Information:**"
+				practitionerName := fmt.Sprintf("%s %s", practitioner.GivenName, practitioner.FamilyName)
+				if practitioner.Prefix != nil && *practitioner.Prefix != "" {
+					practitionerName = fmt.Sprintf("%s %s %s", *practitioner.Prefix, practitioner.GivenName, practitioner.FamilyName)
+				}
+				info += fmt.Sprintf("\n- Name: %s", practitionerName)
+				info += fmt.Sprintf("\n- ID: %s", h.context.PractitionerID)
+				
+				if practitioner.Gender != nil && *practitioner.Gender != "" {
+					info += fmt.Sprintf("\n- Gender: %s", *practitioner.Gender)
+				}
+			} else {
+				info += fmt.Sprintf("\n- Current Practitioner ID: %s", h.context.PractitionerID)
+			}
 		}
 	}
 

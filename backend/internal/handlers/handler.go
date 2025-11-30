@@ -1078,12 +1078,21 @@ func (h *Handler) callOpenRouter(prompt string) (string, error) {
 	// TODO: Breaking on callOpenRouter
 	fmt.Errorf("callOpenRouter called with prompt: '%s'", prompt)
 
+	// Build system message with context
+	systemContent := "You are an expert physician consultant providing information to a healthcare practitioner. Be factual, succinct, and use appropriate medical terminology. Focus on clinically relevant information."
+	
+	// Add context information if available
+	contextInfo := h.GetContextInfo()
+	if contextInfo != "" {
+		systemContent += contextInfo
+	}
+
 	reqBody := map[string]interface{}{
 		"model": "meta-llama/llama-3.2-3b-instruct:free",
 		"messages": []map[string]string{
 			{
 				"role":    "system",
-				"content": "You are an expert physician consultant providing information to a healthcare practitioner. Be factual, succinct, and use appropriate medical terminology. Focus on clinically relevant information.",
+				"content": systemContent,
 			},
 			{
 				"role":    "user",
@@ -1534,20 +1543,23 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 	systemPrompt := `You are an expert physician consultant providing support to a practitioner who is currently seeing a patient. You are highly knowledgeable, evidence-based, and provide factual, clinically relevant information.
 
 Key behaviors:
-• You are speaking to an healthcare practitioner (not the patient)
+• You are speaking to a healthcare practitioner (not the patient)
 • Be succinct and to-the-point - the practitioner needs quick, actionable information
 • Focus on clinical facts and evidence-based recommendations
 • Assume the practitioner has medical knowledge - use appropriate medical terminology
 • Keep responses to 2-4 sentences maximum (responses will be converted to audio)
 • When discussing the patient, refer to them as "the patient" or by name if known
 • Refer to yourself as VoiceMed if asked or it is relevant
-• Refer to me by my name which is available via practitioner information, if possible. Otherwise refer to me as 'you'"
+• Refer to me by my name which is available via practitioner information, if possible. Otherwise refer to me as 'you'
 • Provide specific, actionable guidance when possible`
 	
 	// Add specific guidance when we have patient context
 	contextInfo := h.GetContextInfo()
 	if strings.Contains(contextInfo, "Patient Medical Summary") {
 		systemPrompt += "\n\nThe patient's medical summary is available below. Consider their specific conditions, current medications, recent encounters, and allergies when providing recommendations. Be aware of potential drug interactions and contraindications based on their medical history."
+	}
+	if strings.Contains(contextInfo, "Practitioner Information") {
+		systemPrompt += "\n\nAddress the practitioner by their name when appropriate, using the practitioner information provided below."
 	}
 	systemPrompt += contextInfo
 
@@ -1697,10 +1709,9 @@ func (h *Handler) executeTool(toolName, argumentsJSON string, defaultPractitione
 		return h.ExtractTextFromMCPResult(result), nil
 
 	case "set_practitioner_context":
-		practitionerID, ok := args["practitioner_id"].(string)
-		if !ok {
-			return "", fmt.Errorf("invalid practitioner_id parameter")
-		}
+		// NOTE: Keep the practitioner ID hardcoded to avoid mistakes during demo
+		practitionerID := "5df7a318-69e4-3ed2-a046-bad7b3e321b5";
+
 		result, err := h.SetPractitionerContext(practitionerID)
 		if err != nil {
 			return "", err
