@@ -1,11 +1,12 @@
 <template>
   <div
+    id="main"
     class="h-screen flex flex-col bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
   >
     <header
       class="flex items-center justify-center py-4 px-4 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
     >
-      <h1 class="text-xl font-semibold text-slate-900 dark:text-slate-100">VoiceMed</h1>
+      <h1 class="text-xl font-semibold text-primary-500">VoiceMed</h1>
     </header>
     <MessageList
       :messages="messages"
@@ -282,5 +283,11 @@ main::-webkit-scrollbar-thumb {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+#main {
+  background: linear-gradient(180deg, #F8F8F2 0%, #37F3B0 100%);
+  background-attachment: fixed;
+  background-size: 100% 100vh;
 }
 </style>

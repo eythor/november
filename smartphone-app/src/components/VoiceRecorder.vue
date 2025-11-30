@@ -8,11 +8,38 @@
     @touchend.prevent="endPress(false)"
     @touchcancel.prevent="endPress(true)"
   >
-    <button class="px-4 py-2 rounded-full border" :class="{ 'bg-red-500 text-white': recording }">
-      {{ recording ? `${seconds}s Recording...` : "Hold to Talk" }}
+    <button
+      class="px-4 py-2 rounded-full border flex items-center gap-2 transition-colors"
+      :class="
+        recording
+          ? 'bg-red-500 text-white border-red-500'
+          : 'bg-white dark:bg-slate-800 border-primary-500 text-primary-500 hover:bg-primary-50 dark:hover:bg-primary-950/20'
+      "
+    >
+      <svg
+        v-if="!recording"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        class="w-5 h-5"
+      >
+        <path
+          d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5zM18.75 9a.75.75 0 00-1.5 0v3.75a5.25 5.25 0 01-10.5 0V9a.75.75 0 00-1.5 0v3.75a6.751 6.751 0 006 6.72v1.78a.75.75 0 001.5 0v-1.78a6.751 6.751 0 006-6.72V9z"
+        />
+      </svg>
+      <svg
+        v-else
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        class="w-5 h-5"
+      >
+        <path
+          d="M8.25 4.5a3.75 3.75 0 117.5 0v8.25a3.75 3.75 0 11-7.5 0V4.5zM18.75 9a.75.75 0 00-1.5 0v3.75a5.25 5.25 0 01-10.5 0V9a.75.75 0 00-1.5 0v3.75a6.751 6.751 0 006 6.72v1.78a.75.75 0 001.5 0v-1.78a6.751 6.751 0 006-6.72V9z"
+        />
+      </svg>
+      <span v-if="recording">{{ seconds }}s Recording...</span>
     </button>
-
-    <div v-if="recording" class="absolute -top-6 text-xs text-gray-600">{{ seconds }}s</div>
   </div>
 </template>
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="audio-waveform-container border border-gray-300 dark:border-slate-600 rounded-md">
+  <div class="audio-waveform-container border border-gray-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-700/50">
     <div ref="waveformRef" class="waveform"></div>
   </div>
 </template>
@@ -26,6 +26,8 @@ let wavesurfer: WaveSurfer | null = null;
 onMounted(async () => {
   if (!waveformRef.value || !props.audioData) return;
 
+  // Use the same style for both user and assistant messages (the assistant style looks great)
+  // This ensures consistency across all waveforms
   try {
     wavesurfer = WaveSurfer.create({
       container: waveformRef.value,
