@@ -18,22 +18,31 @@ import (
 )
 
 type PatientMedicalSummary struct {
-	Demographics    string   `json:"demographics,omitempty"`
-	ActiveConditions []string `json:"active_conditions,omitempty"`
+	Demographics       string   `json:"demographics,omitempty"`
+	ActiveConditions   []string `json:"active_conditions,omitempty"`
 	CurrentMedications []string `json:"current_medications,omitempty"`
 	RecentObservations []string `json:"recent_observations,omitempty"`
-	Allergies       []string `json:"allergies,omitempty"`
-	RecentEncounters []string `json:"recent_encounters,omitempty"`
-	LastEncounter   string   `json:"last_encounter,omitempty"`
-	TotalEncounters int      `json:"total_encounters,omitempty"`
-	LastUpdated     string   `json:"last_updated,omitempty"`
+	Allergies          []string `json:"allergies,omitempty"`
+	RecentEncounters   []string `json:"recent_encounters,omitempty"`
+	LastEncounter      string   `json:"last_encounter,omitempty"`
+	TotalEncounters    int      `json:"total_encounters,omitempty"`
+	LastUpdated        string   `json:"last_updated,omitempty"`
 }
 
 type Context struct {
-	PatientID      string                `json:"patient_id,omitempty"`
-	PractitionerID string                `json:"practitioner_id,omitempty"`
-	PatientSummary *PatientMedicalSummary `json:"patient_summary,omitempty"`
-	LastResponse   string                `json:"last_response,omitempty"`
+	PatientID               string                   `json:"patient_id,omitempty"`
+	PractitionerID          string                   `json:"practitioner_id,omitempty"`
+	PatientSummary          *PatientMedicalSummary   `json:"patient_summary,omitempty"`
+	LastResponse            string                   `json:"last_response,omitempty"`
+	PendingDateConfirmation *PendingDateConfirmation `json:"pending_date_confirmation,omitempty"`
+}
+
+// PendingDateConfirmation stores information about an ambiguous date awaiting user confirmation
+type PendingDateConfirmation struct {
+	OriginalInput   string                 `json:"original_input"`
+	OriginalRequest map[string]interface{} `json:"original_request"`
+	Options         []DateOption           `json:"options"`
+	CreatedAt       time.Time              `json:"created_at"`
 }
 
 type Handler struct {
@@ -62,7 +71,7 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 			debug.Error("Failed to fetch medical summary: %v", summaryErr)
 			medicalSummary = nil
 		}
-		
+
 		h.mu.Lock()
 		h.context.PatientID = patient.ID
 		h.context.PatientSummary = medicalSummary
@@ -113,13 +122,13 @@ func (h *Handler) LookupPatient(query string) (interface{}, error) {
 	// If exactly one patient found, auto-set context
 	if len(patients) == 1 {
 		p := patients[0]
-		
+
 		medicalSummary, summaryErr := h.fetchPatientMedicalSummary(p.ID)
 		if summaryErr != nil {
 			debug.Error("Failed to fetch medical summary: %v", summaryErr)
 			medicalSummary = nil
 		}
-		
+
 		h.mu.Lock()
 		h.context.PatientID = p.ID
 		h.context.PatientSummary = medicalSummary
@@ -184,10 +193,45 @@ func (h *Handler) ScheduleAppointment(patientID, practitionerID, dateTime, appoi
 		return nil, fmt.Errorf("practitioner not found: %s", practitionerID)
 	}
 
-	// Parse and validate datetime
-	appointmentTime, err := time.Parse(time.RFC3339, dateTime)
+	// Parse and validate datetime using robust parser
+	appointmentTime, err := ParseDateTimeRobust(dateTime, time.Now())
 	if err != nil {
-		return nil, fmt.Errorf("invalid datetime format (use ISO 8601): %s", dateTime)
+		// Check if it's an ambiguous date error
+		if ambigErr, ok := err.(*AmbiguousDateError); ok {
+			// Store in context for user confirmation
+			h.mu.Lock()
+			h.context.PendingDateConfirmation = &PendingDateConfirmation{
+				OriginalInput: dateTime,
+				OriginalRequest: map[string]interface{}{
+					"tool": "schedule_appointment",
+					"args": map[string]interface{}{
+						"patient_id":      patientID,
+						"practitioner_id": practitionerID,
+						"datetime":        dateTime,
+						"type":            appointmentType,
+					},
+				},
+				Options:   ambigErr.Options,
+				CreatedAt: time.Now(),
+			}
+			h.mu.Unlock()
+
+			// Return user-friendly message asking for confirmation
+			return map[string]interface{}{
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": ambigErr.ToUserMessage(),
+					},
+				},
+			}, nil
+		}
+		return nil, fmt.Errorf("invalid datetime: %w", err)
+	}
+
+	// Validate that the datetime is reasonable
+	if err := ValidateDateTime(appointmentTime); err != nil {
+		return nil, fmt.Errorf("invalid appointment time: %w", err)
 	}
 
 	// Generate new encounter ID
@@ -1211,7 +1255,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 						},
 						"datetime": map[string]interface{}{
 							"type":        "string",
-							"description": "Appointment date and time (ISO 8601 format)",
+							"description": "Appointment date and time. Supports: ISO 8601 (2024-12-01T14:00:00+01:00), simple formats (2024-12-01 14:00), German format (01.12.2024 14:30), or natural language (tomorrow at 2pm, next Monday, in 3 days). System handles timezone conversion to Berlin automatically.",
 						},
 						"type": map[string]interface{}{
 							"type":        "string",
@@ -1430,7 +1474,7 @@ Key behaviors:
 • Keep responses to 2-4 sentences maximum (responses will be converted to audio)
 • When discussing the patient, refer to them as "the patient" or by name if known
 • Provide specific, actionable guidance when possible`
-	
+
 	// Add specific guidance when we have patient context
 	contextInfo := h.GetContextInfo()
 	if strings.Contains(contextInfo, "Patient Medical Summary") {
@@ -1565,7 +1609,7 @@ func (h *Handler) executeToolLoop(reqBody map[string]interface{}, originalQuery 
 func (h *Handler) executeTool(toolName, argumentsJSON string, defaultPractitionerID string) (string, error) {
 	debug.Log("Executing tool: %s", toolName)
 	debug.Trace("Tool arguments: %s", argumentsJSON)
-	
+
 	var args map[string]interface{}
 	if err := json.Unmarshal([]byte(argumentsJSON), &args); err != nil {
 		return "", fmt.Errorf("failed to parse arguments: %w", err)
@@ -1771,6 +1815,17 @@ func (h *Handler) executeTool(toolName, argumentsJSON string, defaultPractitione
 			patientID = pid
 		}
 		result, err := h.DetermineApixabanDose(patientID)
+		if err != nil {
+			return "", err
+		}
+		return h.ExtractTextFromMCPResult(result), nil
+
+	case "confirm_date_choice":
+		choice, ok := args["choice"].(string)
+		if !ok {
+			return "", fmt.Errorf("invalid choice parameter")
+		}
+		result, err := h.ConfirmDateChoice(choice)
 		if err != nil {
 			return "", err
 		}

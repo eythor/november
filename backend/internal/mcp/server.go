@@ -40,14 +40,14 @@ type Error struct {
 
 func (s *Server) HandleMessage(message []byte) (*JSONRPCResponse, error) {
 	debug.Trace("MCP HandleMessage received: %s", string(message))
-	
+
 	var request JSONRPCRequest
 	if err := json.Unmarshal(message, &request); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal request: %w", err)
 	}
 
 	debug.Log("MCP handling method: %s", request.Method)
-	
+
 	response := &JSONRPCResponse{
 		JSONRPC: "2.0",
 		ID:      request.ID,
@@ -185,7 +185,7 @@ func (s *Server) handleToolsList() map[string]interface{} {
 					},
 					"datetime": map[string]interface{}{
 						"type":        "string",
-						"description": "Appointment date and time (ISO 8601 format)",
+						"description": "Appointment date and time. Supports: ISO 8601 (2024-12-01T14:00:00+01:00), simple formats (2024-12-01 14:00), German format (01.12.2024 14:30), or natural language (tomorrow at 2pm, next Monday, in 3 days). System handles timezone conversion to Berlin automatically.",
 					},
 					"type": map[string]interface{}{
 						"type":        "string",
@@ -348,6 +348,20 @@ func (s *Server) handleToolsList() map[string]interface{} {
 				"required": []string{"birth_date"},
 			},
 		},
+		{
+			"name":        "confirm_date_choice",
+			"description": "Confirm a date interpretation choice when an ambiguous date was provided. Use this when the user responds with A, B, or another choice letter to a date confirmation question.",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"choice": map[string]interface{}{
+						"type":        "string",
+						"description": "The choice key (A, B, etc.) selected by the user",
+					},
+				},
+				"required": []string{"choice"},
+			},
+		},
 	}
 
 	return map[string]interface{}{
@@ -367,7 +381,7 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 
 	debug.Log("MCP tool call: %s", toolCall.Name)
 	debug.Verbose("Tool arguments: %s", string(toolCall.Arguments))
-	
+
 	switch toolCall.Name {
 	case "natural_language_query":
 		var args struct {
@@ -507,6 +521,15 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 			return nil, err
 		}
 		return s.handler.UpdatePatientBirthDate(args.PatientID, args.BirthDate)
+
+	case "confirm_date_choice":
+		var args struct {
+			Choice string `json:"choice"`
+		}
+		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+			return nil, err
+		}
+		return s.handler.ConfirmDateChoice(args.Choice)
 
 	default:
 		return nil, fmt.Errorf("unknown tool: %s", toolCall.Name)

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/eythor/mcp-server/internal/database"
@@ -11,17 +12,17 @@ import (
 // fetchPatientMedicalSummary fetches and formats patient medical data for context
 func (h *Handler) fetchPatientMedicalSummary(patientID string) (*PatientMedicalSummary, error) {
 	debug.Verbose("Fetching medical summary for patient: %s", patientID)
-	
+
 	summary := &PatientMedicalSummary{
 		LastUpdated: time.Now().Format(time.RFC3339),
 	}
-	
+
 	// Get patient demographics
 	patient, err := database.GetPatientByID(h.db, patientID)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching patient: %w", err)
 	}
-	
+
 	// Format demographics
 	age := "Unknown"
 	if patient.BirthDate != "" {
@@ -29,9 +30,9 @@ func (h *Handler) fetchPatientMedicalSummary(patientID string) (*PatientMedicalS
 			age = fmt.Sprintf("%d years", calcAge)
 		}
 	}
-	summary.Demographics = fmt.Sprintf("%s %s, %s, Age: %s", 
+	summary.Demographics = fmt.Sprintf("%s %s, %s, Age: %s",
 		patient.GivenName, patient.FamilyName, patient.Gender, age)
-	
+
 	// Get active conditions
 	conditions, err := database.GetConditionsByPatientID(h.db, patientID)
 	if err == nil {
@@ -45,7 +46,7 @@ func (h *Handler) fetchPatientMedicalSummary(patientID string) (*PatientMedicalS
 			}
 		}
 	}
-	
+
 	// Get current medications
 	medications, err := database.GetMedicationsByPatientID(h.db, patientID)
 	if err == nil {
@@ -59,7 +60,7 @@ func (h *Handler) fetchPatientMedicalSummary(patientID string) (*PatientMedicalS
 			}
 		}
 	}
-	
+
 	// Get recent observations (last 5)
 	observations, err := database.GetObservationsByPatientID(h.db, patientID)
 	if err == nil {
@@ -81,7 +82,7 @@ func (h *Handler) fetchPatientMedicalSummary(patientID string) (*PatientMedicalS
 			count++
 		}
 	}
-	
+
 	// Get allergies
 	allergies, err := database.GetAllergiesByPatientID(h.db, patientID)
 	if err == nil {
@@ -95,12 +96,12 @@ func (h *Handler) fetchPatientMedicalSummary(patientID string) (*PatientMedicalS
 			}
 		}
 	}
-	
+
 	// Get recent encounters
 	encounters, err := database.GetEncountersByPatientID(h.db, patientID)
 	if err == nil {
 		summary.TotalEncounters = len(encounters)
-		
+
 		// Format last encounter date if available
 		if len(encounters) > 0 {
 			lastEnc := encounters[0]
@@ -113,14 +114,14 @@ func (h *Handler) fetchPatientMedicalSummary(patientID string) (*PatientMedicalS
 				}
 			}
 		}
-		
+
 		// Get recent encounters (last 5)
 		count := 0
 		for _, e := range encounters {
 			if count >= 5 {
 				break
 			}
-			
+
 			encText := ""
 			// Format encounter type/class
 			if e.TypeDisplay != nil && *e.TypeDisplay != "" {
@@ -128,7 +129,7 @@ func (h *Handler) fetchPatientMedicalSummary(patientID string) (*PatientMedicalS
 			} else {
 				encText = e.Class
 			}
-			
+
 			// Add date
 			if e.StartDateTime != "" {
 				date := e.StartDateTime
@@ -137,12 +138,12 @@ func (h *Handler) fetchPatientMedicalSummary(patientID string) (*PatientMedicalS
 				}
 				encText += fmt.Sprintf(" on %s", date)
 			}
-			
+
 			// Add status if not finished
 			if e.Status != "finished" && e.Status != "" {
 				encText += fmt.Sprintf(" (%s)", e.Status)
 			}
-			
+
 			// Add duration if end time exists
 			if e.EndDateTime != nil && *e.EndDateTime != "" && e.StartDateTime != "" {
 				// For simplicity, just note if it was same day or multi-day
@@ -154,16 +155,16 @@ func (h *Handler) fetchPatientMedicalSummary(patientID string) (*PatientMedicalS
 					}
 				}
 			}
-			
+
 			summary.RecentEncounters = append(summary.RecentEncounters, encText)
 			count++
 		}
 	}
-	
+
 	debug.Verbose("Medical summary fetched: %d conditions, %d medications, %d observations, %d allergies, %d encounters",
-		len(summary.ActiveConditions), len(summary.CurrentMedications), 
+		len(summary.ActiveConditions), len(summary.CurrentMedications),
 		len(summary.RecentObservations), len(summary.Allergies), len(summary.RecentEncounters))
-	
+
 	return summary, nil
 }
 
@@ -180,7 +181,7 @@ func (h *Handler) SetPatientContext(patientID string) (interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error fetching patient details: %w", err)
 	}
-	
+
 	// Fetch medical summary
 	medicalSummary, err := h.fetchPatientMedicalSummary(patientID)
 	if err != nil {
@@ -194,7 +195,7 @@ func (h *Handler) SetPatientContext(patientID string) (interface{}, error) {
 	h.context.PatientSummary = medicalSummary
 	h.context.LastResponse = "" // Clear last response when changing patient
 	h.mu.Unlock()
-	
+
 	debug.Log("Patient context set: %s %s (ID: %s), medical summary loaded: %v, last response cleared",
 		patient.GivenName, patient.FamilyName, patientID, medicalSummary != nil)
 
@@ -247,7 +248,7 @@ func (h *Handler) GetContext() (interface{}, error) {
 		} else {
 			message += fmt.Sprintf("• Patient ID: %s\n", ctx.PatientID)
 		}
-		
+
 		// Show encounter summary if available
 		if ctx.PatientSummary != nil {
 			if ctx.PatientSummary.LastEncounter != "" {
@@ -284,7 +285,7 @@ func (h *Handler) ClearContext() (interface{}, error) {
 	h.mu.Lock()
 	h.context = Context{}
 	h.mu.Unlock()
-	
+
 	debug.Log("Context cleared, including patient medical summary and last response")
 
 	return map[string]interface{}{
@@ -335,7 +336,7 @@ func (h *Handler) GetContextInfo() string {
 	// Always include current timestamp
 	currentTime := time.Now().Format(time.RFC3339)
 	info := fmt.Sprintf("\n\nCurrent date and time: %s", currentTime)
-	
+
 	// Include last response if available (for conversation continuity)
 	if h.context.LastResponse != "" {
 		info += "\n\n**Previous Response:**"
@@ -351,12 +352,12 @@ func (h *Handler) GetContextInfo() string {
 		info += "\n\nCurrent context:"
 		if h.context.PatientID != "" {
 			info += fmt.Sprintf("\n- Current Patient ID: %s", h.context.PatientID)
-			
+
 			// Include patient medical summary if available
 			if h.context.PatientSummary != nil {
 				info += "\n\n**Patient Medical Summary:**"
 				info += fmt.Sprintf("\n- Demographics: %s", h.context.PatientSummary.Demographics)
-				
+
 				// Encounter information
 				if h.context.PatientSummary.LastEncounter != "" {
 					info += fmt.Sprintf("\n- Last Visit: %s", h.context.PatientSummary.LastEncounter)
@@ -364,35 +365,35 @@ func (h *Handler) GetContextInfo() string {
 				if h.context.PatientSummary.TotalEncounters > 0 {
 					info += fmt.Sprintf(" (Total visits: %d)", h.context.PatientSummary.TotalEncounters)
 				}
-				
+
 				if len(h.context.PatientSummary.RecentEncounters) > 0 {
 					info += "\n- Recent Encounters:"
 					for _, enc := range h.context.PatientSummary.RecentEncounters {
 						info += fmt.Sprintf("\n  • %s", enc)
 					}
 				}
-				
+
 				if len(h.context.PatientSummary.ActiveConditions) > 0 {
 					info += "\n- Active Conditions:"
 					for _, condition := range h.context.PatientSummary.ActiveConditions {
 						info += fmt.Sprintf("\n  • %s", condition)
 					}
 				}
-				
+
 				if len(h.context.PatientSummary.CurrentMedications) > 0 {
 					info += "\n- Current Medications:"
 					for _, med := range h.context.PatientSummary.CurrentMedications {
 						info += fmt.Sprintf("\n  • %s", med)
 					}
 				}
-				
+
 				if len(h.context.PatientSummary.Allergies) > 0 {
 					info += "\n- Allergies:"
 					for _, allergy := range h.context.PatientSummary.Allergies {
 						info += fmt.Sprintf("\n  • %s", allergy)
 					}
 				}
-				
+
 				if len(h.context.PatientSummary.RecentObservations) > 0 {
 					info += "\n- Recent Observations:"
 					for _, obs := range h.context.PatientSummary.RecentObservations {
@@ -407,4 +408,90 @@ func (h *Handler) GetContextInfo() string {
 	}
 
 	return info
+}
+
+// ConfirmDateChoice handles user confirmation of an ambiguous date
+func (h *Handler) ConfirmDateChoice(choice string) (interface{}, error) {
+	h.mu.Lock()
+	pending := h.context.PendingDateConfirmation
+	h.mu.Unlock()
+
+	if pending == nil {
+		return nil, fmt.Errorf("no pending date confirmation found")
+	}
+
+	// Check if confirmation has expired (30 minutes)
+	if pending.CreatedAt.Before(time.Now().Add(-30 * time.Minute)) {
+		h.mu.Lock()
+		h.context.PendingDateConfirmation = nil
+		h.mu.Unlock()
+		return nil, fmt.Errorf("date confirmation expired, please schedule the appointment again")
+	}
+
+	// Find the selected option
+	var selectedOption *DateOption
+	for i := range pending.Options {
+		if pending.Options[i].Key == choice {
+			selectedOption = &pending.Options[i]
+			break
+		}
+	}
+
+	if selectedOption == nil {
+		validChoices := make([]string, len(pending.Options))
+		for i, opt := range pending.Options {
+			validChoices[i] = opt.Key
+		}
+		return nil, fmt.Errorf("invalid choice '%s'. Valid options: %s", choice, strings.Join(validChoices, ", "))
+	}
+
+	// Clear the pending confirmation
+	h.mu.Lock()
+	h.context.PendingDateConfirmation = nil
+	h.mu.Unlock()
+
+	// Re-execute the original request with the confirmed date
+	originalReq := pending.OriginalRequest
+	toolName, ok := originalReq["tool"].(string)
+	if !ok {
+		return nil, fmt.Errorf("invalid pending request: missing tool name")
+	}
+
+	// Update the datetime field in the original arguments
+	args, ok := originalReq["args"].(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("invalid pending request: missing args")
+	}
+
+	// Replace the datetime with the confirmed ISO date
+	args["datetime"] = selectedOption.ISODate
+
+	// Re-execute the tool based on tool name
+	switch toolName {
+	case "schedule_appointment":
+		patientID, _ := args["patient_id"].(string)
+		practitionerID, _ := args["practitioner_id"].(string)
+		datetime := selectedOption.ISODate
+		appointmentType, _ := args["type"].(string)
+
+		result, err := h.ScheduleAppointment(patientID, practitionerID, datetime, appointmentType)
+		if err != nil {
+			return nil, err
+		}
+
+		// Add confirmation message
+		resultText := fmt.Sprintf("✓ Date confirmed: %s\n\n%s", selectedOption.DisplayText, h.ExtractTextFromMCPResult(result))
+
+		return map[string]interface{}{
+			"content": []map[string]interface{}{
+				{
+					"type": "text",
+					"text": resultText,
+				},
+			},
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported tool for date confirmation: %s", toolName)
+	}
 }
