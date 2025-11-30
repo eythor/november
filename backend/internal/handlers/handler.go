@@ -641,6 +641,25 @@ func (h *Handler) AddObservation(patientID, code, display, category, status, eff
 		return nil, fmt.Errorf("failed to add observation: %w", err)
 	}
 
+	// Update patient context if this observation is for the current patient
+	h.mu.RLock()
+	currentPatientID := h.context.PatientID
+	h.mu.RUnlock()
+	
+	if currentPatientID == patientID {
+		debug.Log("Updating patient context after adding observation")
+		// Refresh the medical summary for the current patient
+		medicalSummary, err := h.fetchPatientMedicalSummary(patientID)
+		if err != nil {
+			debug.Error("Failed to refresh medical summary after adding observation: %v", err)
+		} else {
+			h.mu.Lock()
+			h.context.PatientSummary = medicalSummary
+			h.mu.Unlock()
+			debug.Verbose("Patient context refreshed with updated medical summary")
+		}
+	}
+
 	// Format response
 	var valueText string
 	if valueQuantity != nil && valueUnit != nil {
