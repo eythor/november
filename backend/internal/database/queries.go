@@ -200,6 +200,46 @@ func CheckPractitionerExists(db *sql.DB, id string) (bool, error) {
 	return exists, err
 }
 
+func GetPractitionerByID(db *sql.DB, id string) (*Practitioner, error) {
+	debug.Verbose("GetPractitionerByID called with id: %s", id)
+	var practitioner Practitioner
+	var prefix, gender, addressLine, city, state, postalCode sql.NullString
+
+	query := `SELECT id, given_name, family_name, prefix, gender, address_line, city, state, postal_code 
+	          FROM practitioners WHERE id = ?`
+	debug.SQL(query, id)
+	
+	err := db.QueryRow(query, id).Scan(
+		&practitioner.ID, &practitioner.GivenName, &practitioner.FamilyName,
+		&prefix, &gender, &addressLine, &city, &state, &postalCode,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query practitioner with ID %s: %w", id, err)
+	}
+
+	// Handle NULL values properly
+	if prefix.Valid {
+		practitioner.Prefix = &prefix.String
+	}
+	if gender.Valid {
+		practitioner.Gender = &gender.String
+	}
+	if addressLine.Valid {
+		practitioner.AddressLine = &addressLine.String
+	}
+	if city.Valid {
+		practitioner.City = &city.String
+	}
+	if state.Valid {
+		practitioner.State = &state.String
+	}
+	if postalCode.Valid {
+		practitioner.PostalCode = &postalCode.String
+	}
+
+	return &practitioner, nil
+}
+
 func GetPatientName(db *sql.DB, patientID string) (string, error) {
 	var name string
 	err := db.QueryRow("SELECT given_name || ' ' || family_name FROM patients WHERE id = ?", patientID).Scan(&name)

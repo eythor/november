@@ -170,6 +170,19 @@ func (s *Server) handleToolsList() map[string]interface{} {
 			},
 		},
 		{
+			"name":        "get_practitioner",
+			"description": "Get practitioner information including name, credentials, gender, and address",
+			"inputSchema": map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"practitioner_id": map[string]interface{}{
+						"type":        "string",
+						"description": "Practitioner ID (optional if set in context)",
+					},
+				},
+			},
+		},
+		{
 			"name":        "schedule_appointment",
 			"description": "Schedule an appointment for a patient",
 			"inputSchema": map[string]interface{}{
@@ -410,6 +423,15 @@ func (s *Server) handleToolsCall(params json.RawMessage) (interface{}, error) {
 			return nil, err
 		}
 		return s.handler.LookupPatient(args.Query)
+
+	case "get_practitioner":
+		var args struct {
+			PractitionerID string `json:"practitioner_id"`
+		}
+		if err := json.Unmarshal(toolCall.Arguments, &args); err != nil {
+			return nil, err
+		}
+		return s.handler.GetPractitioner(args.PractitionerID)
 
 	case "schedule_appointment":
 		var args struct {

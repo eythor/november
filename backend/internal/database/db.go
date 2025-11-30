@@ -105,6 +105,18 @@ type Observation struct {
 	ValueString      *string  `json:"value_string,omitempty"`
 }
 
+type Practitioner struct {
+	ID          string  `json:"id"`
+	GivenName   string  `json:"given_name"`
+	FamilyName  string  `json:"family_name"`
+	Prefix      *string `json:"prefix,omitempty"`
+	Gender      *string `json:"gender,omitempty"`
+	AddressLine *string `json:"address_line,omitempty"`
+	City        *string `json:"city,omitempty"`
+	State       *string `json:"state,omitempty"`
+	PostalCode  *string `json:"postal_code,omitempty"`
+}
+
 type Claim struct {
 	ID                  string   `json:"id"`
 	Status              string   `json:"status"`

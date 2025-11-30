@@ -47,6 +47,10 @@ func NewHandler(db *sql.DB, apiKey string) *Handler {
 	return &Handler{
 		db:     db,
 		apiKey: apiKey,
+		context: Context{
+			// We set a default practitioner ID because we assume this information is given during authentication
+			PractitionerID: "5df7a318-69e4-3ed2-a046-bad7b3e321b5",
+		},
 	}
 }
 
@@ -460,6 +464,63 @@ func (h *Handler) CalculateAge(patientID string) (interface{}, error) {
 			{
 				"type": "text",
 				"text": fmt.Sprintf("Patient: %s (ID: %s)\nBirth Date: %s\nAge: %d years", name, patientID, patient.BirthDate, age),
+			},
+		},
+	}, nil
+}
+
+func (h *Handler) GetPractitioner(practitionerID string) (interface{}, error) {
+	// Use context if practitioner ID not provided
+	practitionerID = h.GetContextPractitionerID(practitionerID)
+
+	if practitionerID == "" {
+		return nil, fmt.Errorf("practitioner ID is required (no practitioner ID provided and none set in context)")
+	}
+
+	// Get practitioner details
+	practitioner, err := database.GetPractitionerByID(h.db, practitionerID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("practitioner not found: %s", practitionerID)
+		}
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+
+	// Build response message
+	message := fmt.Sprintf("Practitioner: %s %s", practitioner.GivenName, practitioner.FamilyName)
+	if practitioner.Prefix != nil && *practitioner.Prefix != "" {
+		message = fmt.Sprintf("Practitioner: %s %s %s", *practitioner.Prefix, practitioner.GivenName, practitioner.FamilyName)
+	}
+	message += fmt.Sprintf("\nID: %s", practitioner.ID)
+	
+	if practitioner.Gender != nil && *practitioner.Gender != "" {
+		message += fmt.Sprintf("\nGender: %s", *practitioner.Gender)
+	}
+	
+	// Add address if available
+	var addressParts []string
+	if practitioner.AddressLine != nil && *practitioner.AddressLine != "" {
+		addressParts = append(addressParts, *practitioner.AddressLine)
+	}
+	if practitioner.City != nil && *practitioner.City != "" {
+		addressParts = append(addressParts, *practitioner.City)
+	}
+	if practitioner.State != nil && *practitioner.State != "" {
+		addressParts = append(addressParts, *practitioner.State)
+	}
+	if practitioner.PostalCode != nil && *practitioner.PostalCode != "" {
+		addressParts = append(addressParts, *practitioner.PostalCode)
+	}
+	
+	if len(addressParts) > 0 {
+		message += fmt.Sprintf("\nAddress: %s", strings.Join(addressParts, ", "))
+	}
+
+	return map[string]interface{}{
+		"content": []map[string]interface{}{
+			{
+				"type": "text",
+				"text": message,
 			},
 		},
 	}, nil
@@ -883,7 +944,7 @@ Important guidelines:
 		"messages": []map[string]interface{}{
 			{
 				"role":    "system",
-				"content": "You are an expert physician consultant providing evidence-based medical guidance to a healthcare practitioner. Provide accurate, current clinical guidelines and best practices. Be factual, specific, and cite relevant guidelines when applicable.",
+				"content": "You are an expert physician consultant providing evidence-based medical guidance to me, a healthcare practitioner. You shall refer to yourself as VoiceMed. Provide accurate, current clinical guidelines and best practices. Be factual, specific, and cite relevant guidelines when applicable.",
 			},
 			{
 				"role":    "user",
@@ -995,6 +1056,9 @@ func (h *Handler) ProcessNaturalLanguageQuery(query string, practitionerID strin
 }
 
 func (h *Handler) callOpenRouter(prompt string) (string, error) {
+	// TODO: Breaking on callOpenRouter
+	fmt.Errorf("callOpenRouter called with prompt: '%s'", prompt)
+
 	reqBody := map[string]interface{}{
 		"model": "meta-llama/llama-3.2-3b-instruct:free",
 		"messages": []map[string]string{
@@ -1065,6 +1129,7 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 	// Get context info
 	h.mu.RLock()
 	hasPatientContext := h.context.PatientID != ""
+	// Assume the practitioner ID is passed in the function parameter
 	hasPractitionerContext := h.context.PractitionerID != ""
 	h.mu.RUnlock()
 
@@ -1148,6 +1213,33 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 						},
 					},
 					"required": []string{"query"},
+				},
+			},
+		},
+		{
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":        "get_practitioner",
+				"description": "Get practitioner information including name, credentials, gender, and address",
+				"parameters": map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"practitioner_id": map[string]interface{}{
+							"type": "string",
+							"description": "Practitioner ID" + func() string {
+								if hasPractitionerContext {
+									return " (optional, uses context if not provided)"
+								}
+								return ""
+							}(),
+						},
+					},
+					"required": func() []string {
+						if hasPractitionerContext {
+							return []string{}
+						}
+						return []string{"practitioner_id"}
+					}(),
 				},
 			},
 		},
@@ -1423,12 +1515,14 @@ func (h *Handler) callOpenRouterWithTools(query string, practitionerID string) (
 	systemPrompt := `You are an expert physician consultant providing support to a practitioner who is currently seeing a patient. You are highly knowledgeable, evidence-based, and provide factual, clinically relevant information.
 
 Key behaviors:
-• You are speaking to a healthcare practitioner (not the patient)
+• You are speaking to an healthcare practitioner (not the patient)
 • Be succinct and to-the-point - the practitioner needs quick, actionable information
 • Focus on clinical facts and evidence-based recommendations
 • Assume the practitioner has medical knowledge - use appropriate medical terminology
 • Keep responses to 2-4 sentences maximum (responses will be converted to audio)
 • When discussing the patient, refer to them as "the patient" or by name if known
+• Refer to yourself as VoiceMed if asked or it is relevant
+• Refer to me by my name which is available via practitioner information, if possible. Otherwise refer to me as 'you'"
 • Provide specific, actionable guidance when possible`
 	
 	// Add specific guidance when we have patient context
@@ -1623,6 +1717,18 @@ func (h *Handler) executeTool(toolName, argumentsJSON string, defaultPractitione
 		debug.Verbose("lookup_patient result: '%s'", textResult)
 		return textResult, nil
 
+	case "get_practitioner":
+		practitionerID, _ := args["practitioner_id"].(string)
+		debug.Log("get_practitioner called with ID: '%s'", practitionerID)
+		result, err := h.GetPractitioner(practitionerID)
+		if err != nil {
+			debug.Error("get_practitioner error: %v", err)
+			return "", err
+		}
+		textResult := h.ExtractTextFromMCPResult(result)
+		debug.Verbose("get_practitioner result: '%s'", textResult)
+		return textResult, nil
+
 	case "get_medical_history":
 		patientID := ""
 		if pid, exists := args["patient_id"].(string); exists {
@@ -1688,14 +1794,10 @@ func (h *Handler) executeTool(toolName, argumentsJSON string, defaultPractitione
 		if pid, exists := args["patient_id"].(string); exists {
 			patientID = pid
 		}
-		code, ok := args["code"].(string)
-		if !ok {
-			return "", fmt.Errorf("invalid code parameter")
-		}
-		display, ok := args["display"].(string)
-		if !ok {
-			return "", fmt.Errorf("invalid display parameter")
-		}
+		// For simplicity, we use a fixed code and display for demo
+		code := "voicemed-observation"
+		display := "VoiceMed Observation"
+
 		category := ""
 		if cat, exists := args["category"].(string); exists {
 			category = cat
